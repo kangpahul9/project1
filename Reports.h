@@ -3,5 +3,6 @@
 
 void dailySalesReport();
 void profitAndLossReport();
+void cashFlowReport();
 
 #endif

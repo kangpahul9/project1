@@ -98,10 +98,15 @@ void logOrder(const vector<OrderItem>& order) {
     float total = 0;
 
     for (const auto& item : order) {
-        file << item.name << "," << item.quantity << "," << item.price << '\n';
+        file << item.name << ","
+             << item.quantity << ","
+             << item.price << ","
+             << paymentModeToString(item.paymentMode)
+             << "\n";
         total += item.total();
     }
 
-    file << "TOTAL," << fixed << setprecision(2) << total << '\n';
+    file << "TOTAL," << fixed << setprecision(2) << total
+         << "," << paymentModeToString(order[0].paymentMode) << "\n";
     file << "---\n";
 }

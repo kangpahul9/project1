@@ -3,11 +3,13 @@
 
 #include <string>
 #include"Menu.h"
+#include "Payment.h"
+
 struct OrderItem {
     std::string name;
     float price;
     int quantity;
-
+    PaymentMode paymentMode;
     float total() const;
 };
 

@@ -3,6 +3,7 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+#include <sstream>
 #include <limits>
 
 using namespace std;
@@ -13,16 +14,36 @@ void loadExpenses(vector<Expense>& expenses) {
     ifstream file("expenses.txt");
     if (!file) return;
 
-    Expense e;
-    int paidFlag;
+    string line;
 
-    while (getline(file, e.description, ',')) {
-        file >> e.amount >> paidFlag;
+    while (getline(file, line)) {
+        stringstream ss(line);
+        Expense e;
+        int paidFlag;
+
+        // description (till comma)
+        getline(ss, e.description, ',');
+
+        // amount + paid flag
+        ss >> e.amount >> paidFlag;
         e.isPaid = (paidFlag == 1);
-        file.ignore(numeric_limits<streamsize>::max(), '\n');
+
+        // optional payment mode
+        string modeStr;
+        if (ss >> modeStr) {
+            if (modeStr == "CASH")
+                e.paymentMode = PaymentMode::CASH;
+            else
+                e.paymentMode = PaymentMode::UPI; // bank-side default
+        } else {
+            // legacy expenses
+            e.paymentMode = PaymentMode::CASH;
+        }
+
         expenses.push_back(e);
     }
 }
+
 
 void saveExpenses(const vector<Expense>& expenses) {
     ofstream file("expenses.txt");
@@ -30,10 +51,15 @@ void saveExpenses(const vector<Expense>& expenses) {
     for (const auto& e : expenses) {
         file << e.description << ","
              << e.amount << " "
-             << (e.isPaid ? 1 : 0) << "\n";
+             << (e.isPaid ? 1 : 0);
+
+        if (e.isPaid) {
+            file << " " << paymentModeToString(e.paymentMode);
+        }
+
+        file << "\n";
     }
 }
-
 void showExpenses(const vector<Expense>& expenses) {
     if (expenses.empty()) {
         cout << "No expenses recorded.\n";
@@ -90,7 +116,7 @@ void markExpensePaid(vector<Expense>& expenses) {
     showExpenses(expenses);
 
     int choice;
-    cout << "Select expense number to mark as paid: ";
+    cout << "Select expense number to mark as PAID: ";
     if (!(cin >> choice) || choice < 1 || choice > expenses.size()) {
         cout << "Invalid selection.\n";
         cin.clear();
@@ -98,7 +124,27 @@ void markExpensePaid(vector<Expense>& expenses) {
         return;
     }
 
-    expenses[choice - 1].isPaid = true;
+    Expense& e = expenses[choice - 1];
+
+    if (e.isPaid) {
+        cout << "Expense already paid.\n";
+        return;
+    }
+
+    int pmChoice;
+    cout << "\nSelect Payment Mode:\n";
+    cout << "1. Cash (Galla)\n";
+    cout << "2. UPI / Bank\n";
+    cout << "Choice: ";
+    cin >> pmChoice;
+
+    if (pmChoice == 1) {
+        e.paymentMode = PaymentMode::CASH;
+    } else {
+        e.paymentMode = PaymentMode::UPI; // bank-side
+    }
+
+    e.isPaid = true;
     saveExpenses(expenses);
 
     cout << "Expense marked as PAID.\n";

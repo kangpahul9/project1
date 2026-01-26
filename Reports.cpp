@@ -1,5 +1,6 @@
 #include "Reports.h"
-
+#include "Payment.h"
+#include <fstream>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -93,18 +94,22 @@ void profitAndLossReport() {
         }
     }
 
-    // ---- Expenses ----
-    {
-        ifstream file("expenses.txt");
-        string desc;
-        float amount;
+    // ---- Paid Expenses ----
+{
+    ifstream file("expenses.txt");
+    string desc;
+    float amount;
+    int paidFlag;
 
-        while (getline(file, desc, ',')) {
-            file >> amount;
-            file.ignore(numeric_limits<streamsize>::max(), '\n');
+    while (getline(file, desc, ',')) {
+        file >> amount >> paidFlag;
+        file.ignore(numeric_limits<streamsize>::max(), '\n');
+
+        if (paidFlag == 1) {
             expenses += amount;
         }
     }
+}
 
     // ---- Salaries ----
     {
@@ -128,4 +133,75 @@ void profitAndLossReport() {
     cout << "Salaries:  " << fixed << setprecision(2) << salaries << endl;
     cout << "-------------------------------\n";
     cout << "Net Profit: " << fixed << setprecision(2) << profit << endl;
+}
+
+void cashFlowReport() {
+    float cashIn = 0;
+    float bankIn = 0;
+    float gallaWithdrawals = 0;
+    float cashExpenses = 0;
+
+    // ---- Read orders ----
+    {
+        ifstream file("orders.txt");
+        string line;
+
+        while (getline(file, line)) {
+            if (line.rfind("TOTAL", 0) == 0) {
+                string label, mode;
+                float amount;
+                char comma;
+
+                stringstream ss(line);
+                ss >> label >> comma >> amount >> comma >> mode;
+
+                if (mode == "CASH") {
+                    cashIn += amount;
+                } else {
+                    bankIn += amount;
+                }
+            }
+        }
+    }
+
+    // ---- Galla withdrawals ----
+    {
+        ifstream file("cash_withdrawals.txt");
+        string date;
+        float amount;
+
+        while (getline(file, date, ',')) {
+            file >> amount;
+            file.ignore(numeric_limits<streamsize>::max(), '\n');
+            gallaWithdrawals += amount;
+        }
+    }
+
+    // ---- Paid CASH expenses ----
+    {
+        ifstream file("expenses.txt");
+        string desc, mode;
+        float amount;
+        int paidFlag;
+
+        while (getline(file, desc, ',')) {
+            file >> amount >> paidFlag >> mode;
+            file.ignore(numeric_limits<streamsize>::max(), '\n');
+
+            if (paidFlag == 1 && mode == "CASH") {
+                cashExpenses += amount;
+            }
+        }
+    }
+
+    float netCash = cashIn - gallaWithdrawals - cashExpenses;
+
+    cout << "\n====== CASH FLOW REPORT ======\n";
+    cout << "Cash Sales (Galla):     " << fixed << setprecision(2) << cashIn << endl;
+    cout << "Bank Sales (UPI/Card):  " << fixed << setprecision(2) << bankIn << endl;
+    cout << "---------------------------------\n";
+    cout << "Galla Withdrawals:      " << fixed << setprecision(2) << gallaWithdrawals << endl;
+    cout << "Cash Expenses Paid:     " << fixed << setprecision(2) << cashExpenses << endl;
+    cout << "---------------------------------\n";
+    cout << "Net Cash in Galla:      " << fixed << setprecision(2) << netCash << endl;
 }

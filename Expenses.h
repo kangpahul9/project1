@@ -3,11 +3,13 @@
 
 #include <string>
 #include <vector>
+#include "Payment.h"
 
 struct Expense {
     std::string description;
     float amount;
     bool isPaid;   // true = paid, false = unpaid
+    PaymentMode paymentMode; 
 };
 
 void loadExpenses(std::vector<Expense>& expenses);

@@ -188,6 +188,7 @@ void useStoreItem(vector<StoreItem>& store) {
     Expense e;
     e.description = "Store usage: " + item.name;
     e.amount = cost;
+    e.isPaid = false;
 
     expenses.push_back(e);
     saveExpenses(expenses);

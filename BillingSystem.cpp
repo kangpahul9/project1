@@ -47,7 +47,7 @@ void saveInventory(const vector<InventoryItem>& inventory) {
 }
 
 void showInventory(const vector<InventoryItem>& inventory) {
-    cout << "\n------ MENU ------\n";
+    cout << "\n------ menu ------\n";
     for (size_t i = 0; i < inventory.size(); i++) {
         cout << i + 1 << ". " << inventory[i].name
              << " - $" << fixed << setprecision(2)

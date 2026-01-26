@@ -5,6 +5,7 @@
 #include <vector>
 
 struct Bill {
+    int id;
     std::string vendor;
     float amount;
     std::string filePath;   // path to bill PDF/image

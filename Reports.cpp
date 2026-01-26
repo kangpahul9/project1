@@ -28,14 +28,14 @@ void dailySalesReport() {
             orders++;
         }
         else if (line.rfind("TOTAL", 0) == 0) {
-            string label;
-            float total;
-            char comma;
+    string label, mode;
+    float total;
+    char comma;
 
-            stringstream ss(line);
-            ss >> label >> comma >> total;
-            revenue += total;
-        }
+    stringstream ss(line);
+    ss >> label >> comma >> total >> comma >> mode;
+    revenue += total;
+}
         else {
             string name;
             int qty;
@@ -204,4 +204,114 @@ void cashFlowReport() {
     cout << "Cash Expenses Paid:     " << fixed << setprecision(2) << cashExpenses << endl;
     cout << "---------------------------------\n";
     cout << "Net Cash in Galla:      " << fixed << setprecision(2) << netCash << endl;
+}
+
+#include "DailyCash.h"
+
+void cashMismatchReport() {
+    ifstream dcFile("daily_cash.txt");
+    if (!dcFile) {
+        cout << "No daily cash data found.\n";
+        return;
+    }
+
+    DailyCash d;
+    int closed;
+    bool found = false;
+
+    // Take last closed day
+    vector<DailyCash> records;
+    while (getline(dcFile, d.date, ',')) {
+        dcFile >> d.openingCash >> d.closingCash >> closed;
+        d.isClosed = (closed == 1);
+        dcFile.ignore(numeric_limits<streamsize>::max(), '\n');
+        records.push_back(d);
+    }
+
+    if (records.empty()) {
+        cout << "No daily records available.\n";
+        return;
+    }
+
+    d = records.back();
+    if (!d.isClosed) {
+        cout << "Day is not closed yet. Close the day first.\n";
+        return;
+    }
+
+    float cashSales = 0;
+    float cashExpenses = 0;
+    float withdrawals = 0;
+
+    // ---- Cash sales ----
+    {
+        ifstream file("orders.txt");
+        string line;
+
+        while (getline(file, line)) {
+            if (line.rfind("TOTAL", 0) == 0) {
+                string label, mode;
+                float amount;
+                char comma;
+                stringstream ss(line);
+                ss >> label >> comma >> amount >> comma >> mode;
+                if (mode == "CASH") {
+                    cashSales += amount;
+                }
+            }
+        }
+    }
+
+    // ---- Cash expenses ----
+    {
+        ifstream file("expenses.txt");
+        string desc, mode;
+        float amount;
+        int paid;
+
+        while (getline(file, desc, ',')) {
+            file >> amount >> paid >> mode;
+            file.ignore(numeric_limits<streamsize>::max(), '\n');
+            if (paid == 1 && mode == "CASH") {
+                cashExpenses += amount;
+            }
+        }
+    }
+
+    // ---- Withdrawals ----
+    {
+        ifstream file("cash_withdrawals.txt");
+        string date;
+        float amount;
+
+        while (getline(file, date, ',')) {
+            file >> amount;
+            file.ignore(numeric_limits<streamsize>::max(), '\n');
+            withdrawals += amount;
+        }
+    }
+
+    float expectedCash =
+        d.openingCash + cashSales - cashExpenses - withdrawals;
+
+    float mismatch = d.closingCash - expectedCash;
+
+    cout << "\n====== CASH MISMATCH REPORT ======\n";
+    cout << "Date:           " << d.date << endl;
+    cout << "Opening Cash:   " << fixed << setprecision(2) << d.openingCash << endl;
+    cout << "Cash Sales:     " << cashSales << endl;
+    cout << "Cash Expenses:  " << cashExpenses << endl;
+    cout << "Withdrawals:    " << withdrawals << endl;
+    cout << "---------------------------------\n";
+    cout << "Expected Cash:  " << expectedCash << endl;
+    cout << "Closing Cash:   " << d.closingCash << endl;
+    cout << "---------------------------------\n";
+
+    if (mismatch == 0) {
+        cout << "Status: PERFECT MATCH ✅\n";
+    } else if (mismatch > 0) {
+        cout << "Extra Cash:     +" << mismatch << "\n";
+    } else {
+        cout << "Short Cash:     " << mismatch << "\n";
+    }
 }

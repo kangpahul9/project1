@@ -1,5 +1,7 @@
 #include <iostream>
 #include <vector>
+#include <iomanip>
+
 
 #include "Menu.h"
 #include "Order.h"
@@ -12,13 +14,15 @@
 #include "Auth.h"
 #include "Cash.h"
 #include "Payment.h"
-
+#include "DailyCash.h"
+#include "GallaState.h"
+#include "PaymentFlow.h"
 
 
 using namespace std;
 
-int main()
-{
+int main() {
+    // ---- Core Data ----
     vector<MenuItem> menu;
     vector<OrderItem> order;
     vector<StoreItem> store;
@@ -27,12 +31,15 @@ int main()
     vector<Bill> bills;
     vector<Vendor> vendors;
     vector<CashWithdrawal> withdrawals;
+    vector<DailyCash> dailyCash;
+    GallaState galla;
 
 
-    // ---- Role Selection (TEMPORARY AUTH) ----
+    // ---- Role Selection (TEMP AUTH) ----
     Role currentRole = selectRole();
-    cout << (isAdmin(currentRole) ? "Admin access granted.\n"
-                                  : "Staff access granted.\n");
+    cout << (isAdmin(currentRole)
+             ? "Admin access granted.\n"
+             : "Staff access granted.\n");
 
     // ---- Load Data ----
     loadMenu(menu);
@@ -42,10 +49,10 @@ int main()
     loadBills(bills);
     loadVendors(vendors);
     loadWithdrawals(withdrawals);
-
+    loadDailyCash(dailyCash);
 
     // ---- Admin Guard ----
-    auto requireAdmin = [&](void) -> bool {
+    auto requireAdmin = [&]() -> bool {
         if (!isAdmin(currentRole)) {
             cout << "Access denied. Admin only.\n";
             return false;
@@ -55,18 +62,17 @@ int main()
 
     bool exitProgram = false;
 
-    while (!exitProgram)
-    {
+    while (!exitProgram) {
         cout << "\n====== RESTAURANT POS ======\n";
-        cout << "1. Add Menu Item (Admin)\n";
-        cout << "2. Add Item to Order\n";
-        cout << "3. View Order\n";
-        cout << "4. Print Final Bill\n";
-        cout << "5. Daily Sales Report\n";
-        cout << "6. Exit\n";
-        cout << "7. Edit Menu Item Price (Admin)\n";
-        cout << "8. View Store Inventory\n";
-        cout << "9. Add Store Item (Admin)\n";
+        cout << "1.  Add Menu Item (Admin)\n";
+        cout << "2.  Add Item to Order\n";
+        cout << "3.  View Order\n";
+        cout << "4.  Print Final Bill\n";
+        cout << "5.  Daily Sales Report\n";
+        cout << "6.  Exit\n";
+        cout << "7.  Edit Menu Item Price (Admin)\n";
+        cout << "8.  View Store Inventory\n";
+        cout << "9.  Add Store Item (Admin)\n";
         cout << "10. Update Store Quantity (Admin)\n";
         cout << "11. View Staff\n";
         cout << "12. Add Staff (Admin)\n";
@@ -83,14 +89,17 @@ int main()
         cout << "23. View Cash Withdrawals (Admin)\n";
         cout << "24. Add Cash Withdrawal (Admin)\n";
         cout << "25. Cash Flow Report\n";
-
+        cout << "26. Start Day (Opening Cash)\n";
+        cout << "27. Close Day (Closing Cash)\n";
+        cout << "28. View Daily Cash Records\n";
+        cout << "29. Cash Mismatch Report\n";
         cout << "Choice: ";
 
         int choice;
         cin >> choice;
 
-        switch (choice)
-        {
+        switch (choice) {
+
         case 1:
             if (!requireAdmin()) break;
             addMenuItem(menu);
@@ -113,38 +122,19 @@ int main()
     char confirm;
     cout << "Confirm checkout? (y/n): ";
     cin >> confirm;
-
     if (confirm != 'y' && confirm != 'Y') {
         cout << "Checkout cancelled.\n";
         break;
     }
 
-    // 1️⃣ Print bill first
     printFinalBill(order);
 
-    // 2️⃣ Ask payment mode AFTER showing bill
-    int pmChoice;
-    cout << "\nSelect Payment Mode:\n";
-    cout << "1. Cash\n";
-    cout << "2. UPI\n";
-    cout << "3. Card\n";
-    cout << "4. Online\n";
-    cout << "Choice: ";
-    cin >> pmChoice;
-
-    PaymentMode mode = PaymentMode::CASH;
-    if (pmChoice >= 1 && pmChoice <= 4) {
-        mode = static_cast<PaymentMode>(pmChoice);
-    } else {
-        cout << "Invalid choice. Defaulting to CASH.\n";
+    // 🔥 THIS IS THE IMPORTANT PART
+    if (!processPayment(order, galla)) {
+        cout << "Payment failed. Order not completed.\n";
+        break;
     }
 
-    //  Assign payment mode to order
-    for (auto& item : order) {
-        item.paymentMode = mode;
-    }
-
-    // Log + clear
     logOrder(order);
     order.clear();
 
@@ -231,17 +221,45 @@ int main()
             if (!requireAdmin()) break;
             addVendor(vendors);
             break;
+
         case 23:
+            if (!requireAdmin()) break;
+            showWithdrawals(withdrawals);
+            break;
+
+        case 24:
+            if (!requireAdmin()) break;
+            addWithdrawal(withdrawals);
+            break;
+
+        case 25:
     if (!requireAdmin()) break;
-    showWithdrawals(withdrawals);
+    cashFlowReport();
     break;
 
-case 24:
-    if (!requireAdmin()) break;
-    addWithdrawal(withdrawals);
+case 26:
+    startDay(dailyCash);
+
+    // Initialise galla from opening denominations
+    if (!dailyCash.empty()) {
+        galla.denoms = dailyCash.back().openingDenoms;
+        cout << "Galla initialised with opening cash: ₹"
+             << fixed << setprecision(2)<< getGallaTotal(galla) << endl;
+    }
     break;
-    case 25:
-    cashFlowReport();
+
+case 27:
+    closeDay(dailyCash, galla);
+    break;
+
+case 28:
+    if (!requireAdmin()) break;
+    showDailyCash(dailyCash);
+    break;
+
+case 29:
+    if (!requireAdmin()) break;
+    cashMismatchReport();
     break;
 
         default:

@@ -61,8 +61,10 @@ void showBills(const vector<Bill>& bills) {
 
 void addBill(vector<Bill>& bills) {
     cin.ignore(numeric_limits<streamsize>::max(), '\n');
+    static int nextBillId = 1;
 
     Bill b;
+    b.id = nextBillId++;
 
     cout << "Enter vendor name: ";
     getline(cin, b.vendor);
@@ -86,7 +88,7 @@ void addBill(vector<Bill>& bills) {
     loadExpenses(expenses);
 
     Expense e;
-    e.description = "Bill: " + b.vendor;
+e.description = "Bill#" + to_string(b.id) + ": " + b.vendor;
     e.amount = b.amount;
     e.isPaid = false;
 
@@ -127,7 +129,7 @@ void markBillPaid(vector<Bill>& bills) {
     vector<Expense> expenses;
     loadExpenses(expenses);
 
-    string targetDesc = "Bill: " + b.vendor;
+string targetDesc = "Bill#" + to_string(b.id) + ": " + b.vendor;
     bool found = false;
 
     for (auto& e : expenses) {

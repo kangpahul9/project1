@@ -4,5 +4,6 @@
 void dailySalesReport();
 void profitAndLossReport();
 void cashFlowReport();
+void cashMismatchReport();
 
 #endif

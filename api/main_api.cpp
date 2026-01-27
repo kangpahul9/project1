@@ -31,6 +31,8 @@
 
 std::vector<OrderItem> activeOrder;
 GallaState galla;
+std::vector<DailyCash> dailyCash;
+
 // ---- TEMP ADMIN CHECK (Phase 9 → JWT / OTP) ----
 bool isAdminRequest(const crow::request& req) {
     auto role = req.get_header_value("X-ROLE");
@@ -39,7 +41,7 @@ bool isAdminRequest(const crow::request& req) {
 
 int main() {
     crow::SimpleApp app;
-
+    loadDailyCash(dailyCash);
     // ===============================
     // Health & Meta
     // ===============================
@@ -71,7 +73,6 @@ int main() {
 ([] {
     std::vector<MenuItem> menu;
     loadMenu(menu);
-
     crow::json::wvalue res = crow::json::wvalue::list();
 
     size_t i = 0;
@@ -221,6 +222,306 @@ CROW_ROUTE(app, "/order/checkout")
 return crow::response{res};
 });
 
+CROW_ROUTE(app, "/bills")
+.methods(crow::HTTPMethod::GET)
+([] {
+    std::vector<Bill> bills;
+    loadBills(bills);
+
+    crow::json::wvalue res = crow::json::wvalue::list();
+    size_t i = 0;
+
+    for (const auto& b : bills) {
+        res[i]["id"] = b.id;
+        res[i]["vendor"] = b.vendor;
+        res[i]["amount"] = b.amount;
+        res[i]["paid"] = b.isPaid;
+        res[i]["file"] = b.filePath;
+        i++;
+    }
+    return res;
+});
+
+
+CROW_ROUTE(app, "/bills")
+.methods(crow::HTTPMethod::POST)
+([&](const crow::request& req) {
+
+    if (!isAdminRequest(req))
+        return crow::response(403, "Admin only");
+
+    auto body = crow::json::load(req.body);
+    if (!body || !body.has("vendor") || !body.has("amount"))
+        return crow::response(400, "Invalid payload");
+
+    std::vector<Bill> bills;
+    loadBills(bills);
+
+    Bill b;
+    b.id = generateId("BILL");
+    b.vendor = body["vendor"].s();
+    b.amount = body["amount"].d();
+b.filePath = body.has("file")
+    ? std::string(body["file"].s())
+    : std::string("");    b.isPaid = false;
+
+    bills.push_back(b);
+    saveBills(bills);
+
+    return crow::response(201, "Bill added");
+});
+
+
+CROW_ROUTE(app, "/bills/pay")
+.methods(crow::HTTPMethod::POST)
+([](const crow::request& req) {
+
+    auto body = crow::json::load(req.body);
+    if (!body || !body.has("id"))
+        return crow::response(400, "Missing bill id");
+
+    std::vector<Bill> bills;
+    loadBills(bills);
+
+    for (auto& b : bills) {
+        if (b.id == body["id"].s()) {
+            b.isPaid = true;
+            saveBills(bills);
+            return crow::response(200, "Bill marked paid");
+        }
+    }
+
+    return crow::response(404, "Bill not found");
+});
+
+
+CROW_ROUTE(app, "/expenses")
+.methods(crow::HTTPMethod::GET)
+([] {
+    std::vector<Expense> expenses;
+    loadExpenses(expenses);
+
+    crow::json::wvalue res = crow::json::wvalue::list();
+    size_t i = 0;
+
+    for (const auto& e : expenses) {
+        res[i]["id"] = e.id;
+        res[i]["desc"] = e.description;
+        res[i]["amount"] = e.amount;
+        res[i]["paid"] = e.isPaid;
+        res[i]["mode"] = paymentModeToString(e.paymentMode);
+        i++;
+    }
+    return res;
+});
+
+
+CROW_ROUTE(app, "/expenses/pay")
+.methods(crow::HTTPMethod::POST)
+([&](const crow::request& req) {
+
+    auto body = crow::json::load(req.body);
+    if (!body || !body.has("id") || !body.has("mode"))
+        return crow::response(400, "Invalid payload");
+
+    std::vector<Expense> expenses;
+    loadExpenses(expenses);
+
+    PayExpenseRequest r;
+    r.expenseId = body["id"].s();
+    r.mode = static_cast<PaymentMode>(body["mode"].i());
+
+    auto result = payExpenseController(expenses, galla, r);
+    if (!result.success)
+        return crow::response(400, result.message);
+
+    return crow::response(200, result.message);
+});
+
+
+CROW_ROUTE(app, "/cash/start")
+.methods(crow::HTTPMethod::POST)
+([&](const crow::request& req) {
+    
+    auto body = crow::json::load(req.body);
+    if (!body || !body.has("date") || !body.has("denoms"))
+        return crow::response(400, "Invalid payload");
+
+    StartDayRequest r;
+    r.date = body["date"].s();
+
+    for (auto& d : body["denoms"]) {
+    r.openingDenoms.push_back({
+        static_cast<int>(d["value"].i()),
+        static_cast<int>(d["count"].i())
+    });
+}
+
+    auto res = startDayController(dailyCash, r);
+
+    crow::json::wvalue out;
+    out["openingCash"] = res.openingCash;
+    out["mismatch"] = res.mismatchWarning;
+    return crow::response{out};
+});
+
+
+CROW_ROUTE(app, "/cash/close")
+.methods(crow::HTTPMethod::POST)
+([&] {
+    auto r = closeDayController(dailyCash, galla);
+
+    crow::json::wvalue res;
+    res["success"] = r.success;
+    res["message"] = r.message;
+    res["closingCash"] = r.closingCash;
+    return res;
+});
+
+
+CROW_ROUTE(app, "/cash/status")
+.methods(crow::HTTPMethod::GET)
+([] {
+    std::vector<DailyCash> dc;
+    loadDailyCash(dc);
+
+    if (dc.empty()) return crow::json::wvalue{};
+
+    auto& d = dc.back();
+
+    crow::json::wvalue res;
+    res["date"] = d.date;
+    res["opening"] = d.openingCash;
+    res["closing"] = d.closingCash;
+    res["closed"] = d.isClosed;
+    return res;
+});
+
+
+// ===============================
+
+CROW_ROUTE(app, "/staff")
+.methods(crow::HTTPMethod::GET)
+([&](const crow::request& req) {
+
+    if (!isAdminRequest(req))
+        return crow::response(403, "Admin only");
+
+    std::vector<Staff> staff;
+    loadStaff(staff);
+
+    crow::json::wvalue res = crow::json::wvalue::list();
+    size_t i = 0;
+
+    for (const auto& s : staff) {
+        res[i]["name"] = s.name;
+        res[i]["role"] = s.role;
+        res[i]["salary"] = s.salary;
+        i++;
+    }
+    return crow::response{res};
+});
+
+
+CROW_ROUTE(app, "/staff")
+.methods(crow::HTTPMethod::POST)
+([&](const crow::request& req) {
+
+    if (!isAdminRequest(req))
+        return crow::response(403, "Admin only");
+
+    auto body = crow::json::load(req.body);
+    if (!body || !body.has("name") || !body.has("role") || !body.has("salary"))
+        return crow::response(400, "Invalid payload");
+
+    std::vector<Staff> staff;
+    loadStaff(staff);
+
+    Staff s;
+    s.name = body["name"].s();
+    s.role = body["role"].s();
+    s.salary = body["salary"].d();
+
+    staff.push_back(s);
+    saveStaff(staff);
+
+    return crow::response(201, "Staff added");
+});
+
+CROW_ROUTE(app, "/staff/pay")
+.methods(crow::HTTPMethod::POST)
+([&](const crow::request& req) {
+
+    if (!isAdminRequest(req))
+        return crow::response(403, "Admin only");
+
+    auto body = crow::json::load(req.body);
+    if (!body || !body.has("name"))
+        return crow::response(400, "Missing staff name");
+
+    std::vector<Staff> staff;
+    loadStaff(staff);
+
+    for (const auto& s : staff) {
+        if (s.name == body["name"].s()) {
+
+            if (!requestApproval(
+                ApprovalType::SALARY,
+                s.salary,
+                "Salary payout: " + s.name
+            )) {
+                return crow::response(403, "Salary not approved");
+            }
+
+            if (!deductFromGalla(galla, s.salary)) {
+                return crow::response(400, "Insufficient galla cash");
+            }
+
+            return crow::response(200, "Salary paid");
+        }
+    }
+
+    return crow::response(404, "Staff not found");
+});
+
+CROW_ROUTE(app, "/vendors")
+.methods(crow::HTTPMethod::GET)
+([] {
+    std::vector<Vendor> vendors;
+    loadVendors(vendors);
+
+    crow::json::wvalue res = crow::json::wvalue::list();
+    size_t i = 0;
+
+    for (const auto& v : vendors) {
+        res[i]["name"] = v.name;
+        i++;
+    }
+    return crow::response{res};
+});
+
+CROW_ROUTE(app, "/vendors")
+.methods(crow::HTTPMethod::POST)
+([&](const crow::request& req) {
+
+    if (!isAdminRequest(req))
+        return crow::response(403, "Admin only");
+
+    auto body = crow::json::load(req.body);
+    if (!body || !body.has("name"))
+        return crow::response(400, "Missing vendor name");
+
+    std::vector<Vendor> vendors;
+    loadVendors(vendors);
+
+    Vendor v;
+    v.name = body["name"].s();
+
+    vendors.push_back(v);
+    saveVendors(vendors);
+
+    return crow::response(201, "Vendor added");
+});
 
     // ===============================
     // Server start

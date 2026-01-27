@@ -52,7 +52,13 @@ void addItemToOrder(vector<OrderItem>& order, const vector<MenuItem>& Menu) {
         }
     }
 
-    order.push_back({inv.name, inv.price, qty});
+    order.push_back({
+    generateId("ORD"),
+    inv.name,
+    inv.price,
+    qty,
+    PaymentMode::CASH   // temp default
+});
     cout << "Item added to order.\n";
 }
 

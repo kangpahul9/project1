@@ -3,9 +3,10 @@
 
 #include <string>
 #include <vector>
+#include "Utils.h"
 
 struct Bill {
-    int id;
+    std::string id;
     std::string vendor;
     float amount;
     std::string filePath;   // path to bill PDF/image

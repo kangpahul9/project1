@@ -51,12 +51,23 @@ bool processPayment(const vector<OrderItem>& order, GallaState& galla) {
 
     float change = received - total;
 
-    addToGalla(galla, received);
-
     if (change > 0 && !deductFromGalla(galla, change)) {
         cout << "❌ Cannot return exact change.\n";
         return false;
     }
+    if (change > 1000) {
+    if (!requestApproval(
+            ApprovalType::LARGE_CHANGE,
+            change,
+            "Large cash change return"
+        )) {
+        cout << "Change return denied.\n";
+        return false;
+    }
+    addToGalla(galla, received);
+    deductFromGalla(galla,change);
+
+}
 
     cout << "Cash payment completed successfully.\n";
     return true;

@@ -4,6 +4,7 @@
 #include "Order.h"
 #include "GallaState.h"
 #include "Payment.h"
+#include"Approval.h"
 
 bool processPayment(
     const std::vector<OrderItem>& order,

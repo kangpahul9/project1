@@ -4,8 +4,11 @@
 #include <string>
 #include"Menu.h"
 #include "Payment.h"
+#include "Utils.h"
+
 
 struct OrderItem {
+    std::string id;
     std::string name;
     float price;
     int quantity;

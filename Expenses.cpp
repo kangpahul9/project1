@@ -17,31 +17,38 @@ void loadExpenses(vector<Expense>& expenses) {
     string line;
 
     while (getline(file, line)) {
-        stringstream ss(line);
-        Expense e;
-        int paidFlag;
+    stringstream ss(line);
+    Expense e;
+    int paidFlag;
 
-        // description (till comma)
+    // Try to read ID first
+    string firstField;
+    getline(ss, firstField, ',');
+
+    // If next char is digit → legacy file (no ID)
+    if (isdigit(firstField[0])) {
+        // Legacy line
+        e.id = generateId("EXP");
+        e.description = firstField;
+    } else {
+        // New format
+        e.id = firstField;
         getline(ss, e.description, ',');
-
-        // amount + paid flag
-        ss >> e.amount >> paidFlag;
-        e.isPaid = (paidFlag == 1);
-
-        // optional payment mode
-        string modeStr;
-        if (ss >> modeStr) {
-            if (modeStr == "CASH")
-                e.paymentMode = PaymentMode::CASH;
-            else
-                e.paymentMode = PaymentMode::UPI; // bank-side default
-        } else {
-            // legacy expenses
-            e.paymentMode = PaymentMode::CASH;
-        }
-
-        expenses.push_back(e);
     }
+
+    ss >> e.amount >> paidFlag;
+    e.isPaid = (paidFlag == 1);
+
+    string modeStr;
+    if (ss >> modeStr) {
+        e.paymentMode =
+            (modeStr == "CASH") ? PaymentMode::CASH : PaymentMode::UPI;
+    } else {
+        e.paymentMode = PaymentMode::CASH;
+    }
+
+    expenses.push_back(e);
+}
 }
 
 
@@ -49,9 +56,10 @@ void saveExpenses(const vector<Expense>& expenses) {
     ofstream file("expenses.txt");
 
     for (const auto& e : expenses) {
-        file << e.description << ","
-             << e.amount << " "
-             << (e.isPaid ? 1 : 0);
+        file << e.id << ","
+     << e.description << ","
+     << e.amount << " "
+     << (e.isPaid ? 1 : 0);
 
         if (e.isPaid) {
             file << " " << paymentModeToString(e.paymentMode);
@@ -101,6 +109,7 @@ void addExpense(vector<Expense>& expenses) {
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
     }
     e.isPaid = false; // New expenses are unpaid by default
+    e.id = generateId("EXP");
     expenses.push_back(e);
     saveExpenses(expenses);
 
@@ -139,10 +148,19 @@ void markExpensePaid(vector<Expense>& expenses) {
     cin >> pmChoice;
 
     if (pmChoice == 1) {
-        e.paymentMode = PaymentMode::CASH;
-    } else {
-        e.paymentMode = PaymentMode::UPI; // bank-side
+    if (!requestApproval(
+            ApprovalType::CASH_EXPENSE,
+            e.amount,
+            e.description
+        )) {
+        cout << "Expense payment cancelled.\n";
+        return;
     }
+
+    e.paymentMode = PaymentMode::CASH;
+    extern GallaState galla; // Phase 7 will remove this
+deductFromGalla(galla, e.amount);
+}
 
     e.isPaid = true;
     saveExpenses(expenses);

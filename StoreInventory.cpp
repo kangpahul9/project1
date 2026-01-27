@@ -186,6 +186,7 @@ void useStoreItem(vector<StoreItem>& store) {
     loadExpenses(expenses);
 
     Expense e;
+    e.id = generateId("EXP");
     e.description = "Store usage: " + item.name;
     e.amount = cost;
     e.isPaid = false;

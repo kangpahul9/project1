@@ -4,6 +4,7 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+
 #include <limits>
 
 using namespace std;
@@ -17,25 +18,33 @@ void loadBills(vector<Bill>& bills) {
     Bill b;
     int paidFlag;
 
-    while (getline(file, b.vendor, ',')) {
+    while (file.good()) {
+        string firstField;
+
+        // ---- Read first field (ID or vendor) ----
+        if (!getline(file, firstField, ',')) break;
+
+        // ---- Detect format ----
+        if (firstField.rfind("BILL_", 0) == 0) {
+            // New format → first field is ID
+            b.id = firstField;
+            getline(file, b.vendor, ',');
+        } else {
+            // Old format → no ID present
+            b.id = generateId("BILL");
+            b.vendor = firstField;
+        }
+
+        // ---- Rest remains SAME ----
         getline(file, b.filePath, ',');
         file >> b.amount >> paidFlag;
         b.isPaid = (paidFlag == 1);
+
         file.ignore(numeric_limits<streamsize>::max(), '\n');
         bills.push_back(b);
     }
 }
 
-void saveBills(const vector<Bill>& bills) {
-    ofstream file("bills.txt");
-
-    for (const auto& b : bills) {
-        file << b.vendor << ","
-             << b.filePath << ","
-             << b.amount << " "
-             << (b.isPaid ? 1 : 0) << "\n";
-    }
-}
 
 void showBills(const vector<Bill>& bills) {
     if (bills.empty()) {
@@ -61,11 +70,10 @@ void showBills(const vector<Bill>& bills) {
 
 void addBill(vector<Bill>& bills) {
     cin.ignore(numeric_limits<streamsize>::max(), '\n');
-    static int nextBillId = 1;
 
     Bill b;
-    b.id = nextBillId++;
 
+        b.id = generateId("BILL");
     cout << "Enter vendor name: ";
     getline(cin, b.vendor);
 
@@ -88,7 +96,8 @@ void addBill(vector<Bill>& bills) {
     loadExpenses(expenses);
 
     Expense e;
-e.description = "Bill#" + to_string(b.id) + ": " + b.vendor;
+    e.id = generateId("EXP");
+e.description = "Bill#" + b.id + ": " + b.vendor;
     e.amount = b.amount;
     e.isPaid = false;
 
@@ -129,7 +138,7 @@ void markBillPaid(vector<Bill>& bills) {
     vector<Expense> expenses;
     loadExpenses(expenses);
 
-string targetDesc = "Bill#" + to_string(b.id) + ": " + b.vendor;
+string targetDesc = "Bill#" + b.id + ": " + b.vendor;
     bool found = false;
 
     for (auto& e : expenses) {

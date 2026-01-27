@@ -4,8 +4,12 @@
 #include <string>
 #include <vector>
 #include "Payment.h"
+#include "Utils.h"
+#include"Approval.h"
+#include"GallaState.h"
 
 struct Expense {
+    std::string id;
     std::string description;
     float amount;
     bool isPaid;   // true = paid, false = unpaid

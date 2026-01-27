@@ -3,8 +3,12 @@
 
 #include <string>
 #include <vector>
+#include "Utils.h"
+#include"Approval.h"
+#include"GallaState.h"
 
 struct CashWithdrawal {
+    std::string id;
     std::string date;   // YYYY-MM-DD
     float amount;
 };

@@ -158,7 +158,7 @@ void markExpensePaid(vector<Expense>& expenses) {
     }
 
     e.paymentMode = PaymentMode::CASH;
-    extern GallaState galla; // Phase 7 will remove this
+    GallaState galla; // Phase 7 will remove this
 deductFromGalla(galla, e.amount);
 }
 

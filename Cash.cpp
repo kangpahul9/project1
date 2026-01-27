@@ -107,7 +107,7 @@ void addWithdrawal(vector<CashWithdrawal> &withdrawals)
     }
     withdrawals.push_back(w);
     saveWithdrawals(withdrawals);
-    extern GallaState galla;
+    GallaState galla;
 deductFromGalla(galla, w.amount);
 
     cout << "Cash withdrawal recorded.\n";

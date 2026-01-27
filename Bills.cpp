@@ -45,6 +45,18 @@ void loadBills(vector<Bill>& bills) {
     }
 }
 
+void saveBills(const vector<Bill>& bills) {
+    ofstream file("bills.txt");
+
+    for (const auto& b : bills) {
+        file << b.id << ","
+             << b.vendor << ","
+             << b.filePath << ","
+             << b.amount << " "
+             << (b.isPaid ? 1 : 0)
+             << "\n";
+    }
+}
 
 void showBills(const vector<Bill>& bills) {
     if (bills.empty()) {
@@ -156,3 +168,4 @@ string targetDesc = "Bill#" + b.id + ": " + b.vendor;
         cout << "Warning: Corresponding expense not found.\n";
     }
 }
+

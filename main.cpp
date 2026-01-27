@@ -17,6 +17,13 @@
 #include "DailyCash.h"
 #include "GallaState.h"
 #include "PaymentFlow.h"
+#include "controllers/DailyCashController.h"
+#include "controllers/PaymentController.h"
+#include "controllers/ExpenseController.h"
+#include "controllers/WithdrawalController.h"
+#include "controllers/CashFlowController.h"
+#include "controllers/DailySalesController.h"
+#include "controllers/CashMismatchController.h"
 
 
 using namespace std;
@@ -129,10 +136,34 @@ int main() {
 
     printFinalBill(order);
 
-    // 🔥 THIS IS THE IMPORTANT PART
-    if (!processPayment(order, galla)) {
-        cout << "Payment failed. Order not completed.\n";
+    int mode;
+    cout << "\nSelect Payment Mode:\n";
+    cout << "1. Cash\n2. UPI\n3. Card\n4. Online\n";
+    cout << "Choice: ";
+    cin >> mode;
+
+    PaymentRequest req;
+    req.mode = static_cast<PaymentMode>(mode);
+
+    if (req.mode == PaymentMode::CASH) {
+        cout << "Enter cash received: ₹";
+        cin >> req.cashReceived;
+    } else {
+        req.cashReceived = 0;
+    }
+
+    auto res = processPaymentController(order, galla, req);
+
+    if (!res.success) {
+        cout << "❌ " << res.message << endl;
         break;
+    }
+
+    cout << "✅ " << res.message << endl;
+    if (res.changeReturned > 0) {
+        cout << "Change returned: ₹"
+             << fixed << setprecision(2)
+             << res.changeReturned << endl;
     }
 
     logOrder(order);
@@ -142,9 +173,15 @@ int main() {
     break;
 }
 
-        case 5:
-            dailySalesReport();
-            break;
+        case 5: {
+    auto r = dailySalesController();
+
+    cout << "Orders: " << r.orders << endl;
+    cout << "Revenue: ₹" << fixed << setprecision(2) << r.revenue << endl;
+    cout << "Best Seller: " << r.bestSeller
+         << " (" << r.bestSellerQty << ")\n";
+    break;
+}
 
         case 6:
             exitProgram = true;
@@ -196,9 +233,24 @@ int main() {
             useStoreItem(store);
             break;
 
-        case 17:
-            markExpensePaid(expenses);
-            break;
+        case 17: {
+    string expId;
+    cout << "Enter Expense ID: ";
+    cin >> expId;
+
+    int m;
+    cout << "Payment Mode (1=CASH, 2=UPI): ";
+    cin >> m;
+
+    PayExpenseRequest req{
+        expId,
+        static_cast<PaymentMode>(m)
+    };
+
+    auto res = payExpenseController(expenses, galla, req);
+    cout << res.message << endl;
+    break;
+}
 
         case 18:
             showBills(bills);
@@ -227,41 +279,84 @@ int main() {
             showWithdrawals(withdrawals);
             break;
 
-        case 24:
-            if (!requireAdmin()) break;
-            addWithdrawal(withdrawals);
-            break;
+        case 24: {
+    WithdrawalRequest req;
+    cout << "Date (YYYY-MM-DD): ";
+    cin >> req.date;
+    cout << "Amount: ";
+    cin >> req.amount;
 
-        case 25:
-    if (!requireAdmin()) break;
-    cashFlowReport();
+    auto res = withdrawalController(withdrawals, galla, req);
+    cout << res.message << endl;
     break;
+}
 
-case 26:
-    startDay(dailyCash);
+        case 25: {
+    if (!requireAdmin()) break;
 
-    // Initialise galla from opening denominations
-    if (!dailyCash.empty()) {
-        galla.denoms = dailyCash.back().openingDenoms;
-        cout << "Galla initialised with opening cash: ₹"
-             << fixed << setprecision(2)<< getGallaTotal(galla) << endl;
+    auto r = cashFlowController();
+    cout << "Cash In: ₹" << r.cashIn << endl;
+    cout << "Bank In: ₹" << r.bankIn << endl;
+    cout << "Withdrawals: ₹" << r.withdrawals << endl;
+    cout << "Cash Expenses: ₹" << r.cashExpenses << endl;
+    cout << "Net Cash: ₹" << r.netCash << endl;
+    break;
+}
+
+case 26: {
+    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+    StartDayRequest req;
+    cout << "Enter date (YYYY-MM-DD): ";
+    getline(cin, req.date);
+
+    cout << "Enter opening denominations:\n";
+    inputDenominations(req.openingDenoms);
+
+    auto res = startDayController(dailyCash, req);
+
+    galla.denoms = req.openingDenoms;
+
+    cout << "Opening Cash: ₹"
+         << fixed << setprecision(2)
+         << res.openingCash << endl;
+
+    if (res.mismatchWarning) {
+        cout << "⚠️ WARNING: Opening cash does not match previous closing!\n";
+    }
+
+    break;
+}
+
+case 27: {
+    auto result = closeDayController(dailyCash, galla);
+
+    if (!result.success) {
+        cout << "❌ " << result.message << endl;
+    } else {
+        cout << "✅ " << result.message << endl;
+        cout << "Closing Cash: ₹"
+             << fixed << setprecision(2)
+             << result.closingCash << endl;
     }
     break;
-
-case 27:
-    closeDay(dailyCash, galla);
-    break;
+}
 
 case 28:
     if (!requireAdmin()) break;
     showDailyCash(dailyCash);
     break;
 
-case 29:
-    if (!requireAdmin()) break;
-    cashMismatchReport();
-    break;
+case 29: {
+    auto r = cashMismatchController();
 
+    cout << "Date: " << r.date << endl;
+    cout << "Opening: ₹" << r.openingCash << endl;
+    cout << "Expected: ₹" << r.expectedCash << endl;
+    cout << "Closing: ₹" << r.closingCash << endl;
+    cout << "Diff: ₹" << r.difference << endl;
+    break;
+}
         default:
             cout << "Invalid choice.\n";
         }

@@ -2,7 +2,9 @@
 
 
 #include "../Approval.h"
-#include "../Auth.h"
+#include "../AuthUser.h"
+#include "../AuthService.h"
+#include "../AuthStore.h"
 #include "../Bills.h"
 #include "../Cash.h"
 #include "../DailyCash.h"
@@ -19,7 +21,12 @@
 #include "../Utils.h"
 #include "../Vendors.h"
 
+#include "../auth/AuthController.h"
+#include "../auth/JwtMiddleware.h"
+#include "../auth/Jwt.h"
+
 #include "../controllers/CashFlowController.h"
+#include "../controllers/CashMismatchController.h"
 #include "../controllers/DailyCashController.h"
 #include "../controllers/DailySalesController.h"
 #include "../controllers/ExpenseController.h"
@@ -32,6 +39,7 @@
 std::vector<OrderItem> activeOrder;
 GallaState galla;
 std::vector<DailyCash> dailyCash;
+std::vector<User> users;
 
 // ---- TEMP ADMIN CHECK (Phase 9 → JWT / OTP) ----
 bool isAdminRequest(const crow::request& req) {
@@ -42,6 +50,8 @@ bool isAdminRequest(const crow::request& req) {
 int main() {
     crow::SimpleApp app;
     loadDailyCash(dailyCash);
+    loadUsers(users);
+
     // ===============================
     // Health & Meta
     // ===============================
@@ -521,6 +531,122 @@ CROW_ROUTE(app, "/vendors")
     saveVendors(vendors);
 
     return crow::response(201, "Vendor added");
+});
+
+CROW_ROUTE(app, "/order/clear")
+.methods(crow::HTTPMethod::POST, crow::HTTPMethod::OPTIONS)
+([](const crow::request& req) {
+
+    // Handle CORS preflight
+    if (req.method == crow::HTTPMethod::OPTIONS) {
+        crow::response res;
+        res.add_header("Access-Control-Allow-Origin", "*");
+        res.add_header("Access-Control-Allow-Methods", "POST, OPTIONS");
+        res.add_header("Access-Control-Allow-Headers", "Content-Type, X-ROLE");
+        return res;
+    }
+
+    activeOrder.clear();
+    return crow::response(200, "Order cleared");
+});
+
+CROW_ROUTE(app, "/payment/modes")
+.methods(crow::HTTPMethod::GET)
+([] {
+    crow::json::wvalue res;
+    res["modes"] = {"CASH", "UPI", "BANK"};
+    return res;
+});
+
+
+CROW_ROUTE(app, "/reports/daily-sales")
+.methods(crow::HTTPMethod::GET)
+([] {
+
+    auto res = dailySalesController();
+
+    crow::json::wvalue out;
+    out["orders"] = res.orders;
+    out["revenue"] = res.revenue;
+    out["bestSeller"] = res.bestSeller;
+    out["bestSellerQty"] = res.bestSellerQty;
+
+    return crow::response{out};
+});
+
+
+CROW_ROUTE(app, "/reports/cash-flow")
+.methods(crow::HTTPMethod::GET)
+([&](const crow::request& req) {
+
+    if (!isAdminRequest(req))
+        return crow::response(403, "Admin only");
+
+    auto r = cashFlowController();
+
+    crow::json::wvalue out;
+    out["cashIn"]       = r.cashIn;
+    out["bankIn"]       = r.bankIn;
+    out["withdrawals"]  = r.withdrawals;
+    out["cashExpenses"] = r.cashExpenses;
+    out["netCash"]      = r.netCash;
+
+    return crow::response{out};
+});
+
+CROW_ROUTE(app, "/reports/cash-mismatch")
+.methods(crow::HTTPMethod::GET)
+([&](const crow::request& req) {
+
+    if (!isAdminRequest(req))
+        return crow::response(403, "Admin only");
+
+    auto r = cashMismatchController();
+
+    // No closed day yet
+    if (r.date.empty()) {
+        return crow::response(204);
+    }
+
+    crow::json::wvalue out;
+    out["date"]         = r.date;
+    out["openingCash"]  = r.openingCash;
+    out["expectedCash"] = r.expectedCash;
+    out["closingCash"]  = r.closingCash;
+    out["difference"]   = r.difference;
+
+    out["status"] = (r.difference == 0)
+        ? "MATCHED"
+        : (r.difference > 0 ? "EXCESS" : "SHORTAGE");
+
+    return crow::response{out};
+});
+
+CROW_ROUTE(app, "/auth/login")
+.methods(crow::HTTPMethod::POST)
+([](const crow::request& req) {
+
+    auto body = crow::json::load(req.body);
+    if (!body || !body.has("pin")) {
+        return crow::response(400, "PIN required");
+    }
+
+    auto result = loginController(body["pin"].s());
+
+    if (!result.success) {
+        return crow::response(401, result.message);
+    }
+
+    crow::json::wvalue res;
+    res["userId"] = result.user.id;
+    res["name"]   = result.user.name;
+    res["role"]   = roleToString(result.user.role);
+    res["token"]  = generateJwt(
+        result.user.id,
+        roleToString(result.user.role)
+    );
+
+    return crow::response{res};
 });
 
     // ===============================

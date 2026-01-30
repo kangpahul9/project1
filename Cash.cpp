@@ -9,48 +9,35 @@ using namespace std;
 
 /* ---------- CASH WITHDRAWALS ---------- */
 
-void loadWithdrawals(vector<CashWithdrawal> &withdrawals)
-{
+void loadWithdrawals(vector<CashWithdrawal>& withdrawals) {
     ifstream file("cash_withdrawals.txt");
-    if (!file)
-        return;
+    if (!file) return;
 
-    CashWithdrawal w;
-    string first;
+    string type, date;
+    float amount;
 
-    while (getline(file, first, ','))
-    {
-
-        // 🔁 NEW FORMAT: WD_xxx,DATE,AMOUNT
-        if (first.rfind("WD_", 0) == 0)
-        {
-            w.id = first;
-            getline(file, w.date, ',');
-        }
-        // 🔁 OLD FORMAT: DATE,AMOUNT
-        else
-        {
-            w.id = generateId("WD");
-            w.date = first;
-        }
-
-        file >> w.amount;
+    while (getline(file, type, ',')) {
+        getline(file, date, ',');
+        file >> amount;
         file.ignore(numeric_limits<streamsize>::max(), '\n');
 
-        withdrawals.push_back(w);
+        withdrawals.push_back({
+            generateId("WD"),
+            date,
+            amount
+        });
     }
 }
-void saveWithdrawals(const vector<CashWithdrawal> &withdrawals)
-{
+
+void saveWithdrawals(const vector<CashWithdrawal>& withdrawals) {
     ofstream file("cash_withdrawals.txt");
 
-    for (const auto &w : withdrawals)
-    {
-        file << w.id << ","
-             << w.date << ","
+    for (const auto& w : withdrawals) {
+        file << "WD," << w.date << ","
              << w.amount << "\n";
     }
 }
+
 
 void showWithdrawals(const vector<CashWithdrawal> &withdrawals)
 {

@@ -1,13 +1,30 @@
 #include "CashFlowController.h"
+#include "../DailyCash.h"
 #include <fstream>
 #include <sstream>
+#include <limits>
 
 using namespace std;
 
 CashFlowResponse cashFlowController() {
     CashFlowResponse r{};
 
-    // ---- Orders ----
+    // =========================
+    // Get last closed date
+    // =========================
+    vector<DailyCash> records;
+    loadDailyCash(records);
+
+    if (records.empty()) return r;
+
+    DailyCash d = records.back();
+    if (!d.isClosed) return r;
+
+    string reportDate = d.date;
+
+    // =========================
+    // Orders (no date info yet)
+    // =========================
     {
         ifstream file("orders.txt");
         string line;
@@ -16,39 +33,54 @@ CashFlowResponse cashFlowController() {
                 string label, mode;
                 float amt;
                 char comma;
+
                 stringstream ss(line);
                 ss >> label >> comma >> amt >> comma >> mode;
 
-                (mode == "CASH") ? r.cashIn += amt : r.bankIn += amt;
+                if (mode == "CASH")
+                    r.cashIn += amt;
+                else
+                    r.bankIn += amt;
             }
         }
     }
 
-    // ---- Withdrawals ----
+    // =========================
+    // Withdrawals (FILTERED)
+    // =========================
     {
         ifstream file("cash_withdrawals.txt");
         string id, date;
         float amt;
+
         while (getline(file, id, ',')) {
             getline(file, date, ',');
             file >> amt;
-            file.ignore();
-            r.withdrawals += amt;
+            file.ignore(numeric_limits<streamsize>::max(), '\n');
+
+            if (date == reportDate) {
+                r.withdrawals += amt;
+            }
         }
     }
 
-    // ---- Cash Expenses ----
+    // =========================
+    // Cash Expenses (no date yet)
+    // =========================
     {
         ifstream file("expenses.txt");
         string id, desc, mode;
         float amt;
         int paid;
+
         while (getline(file, id, ',')) {
             getline(file, desc, ',');
             file >> amt >> paid >> mode;
-            file.ignore();
-            if (paid == 1 && mode == "CASH")
+            file.ignore(numeric_limits<streamsize>::max(), '\n');
+
+            if (paid == 1 && mode == "CASH") {
                 r.cashExpenses += amt;
+            }
         }
     }
 

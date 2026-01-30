@@ -40,17 +40,16 @@ std::vector<OrderItem> activeOrder;
 GallaState galla;
 std::vector<DailyCash> dailyCash;
 std::vector<User> users;
+std::vector<CashWithdrawal> withdrawals; 
 
 // ---- TEMP ADMIN CHECK (Phase 9 → JWT / OTP) ----
-bool isAdminRequest(const crow::request& req) {
-    auto role = req.get_header_value("X-ROLE");
-    return role == "ADMIN";
-}
+
 
 int main() {
     crow::SimpleApp app;
     loadDailyCash(dailyCash);
     loadUsers(users);
+    loadWithdrawals(withdrawals); 
 
     // ===============================
     // Health & Meta
@@ -96,35 +95,34 @@ int main() {
 });
 
     // POST /menu  → ADMIN only
-    CROW_ROUTE(app, "/menu")
-    .methods(crow::HTTPMethod::POST)
-    ([](const crow::request& req) {
+CROW_ROUTE(app, "/menu")
+.methods(crow::HTTPMethod::POST)
+([&](const crow::request& req) {
 
-        if (!isAdminRequest(req)) {
-            return crow::response(403, "Admin access required");
-        }
+    AuthContext ctx;
+    crow::response authRes;
 
-        auto body = crow::json::load(req.body);
-        if (!body) {
-            return crow::response(400, "Invalid JSON");
-        }
+    if (!requireAdmin(req, ctx, authRes)) {
+        return authRes;
+    }
 
-        if (!body.has("name") || !body.has("price")) {
-            return crow::response(400, "Missing fields");
-        }
+    auto body = crow::json::load(req.body);
+    if (!body || !body.has("name") || !body.has("price")) {
+        return crow::response(400, "Invalid payload");
+    }
 
-        std::vector<MenuItem> menu;
-        loadMenu(menu);
+    std::vector<MenuItem> menu;
+    loadMenu(menu);
 
-        MenuItem item;
-        item.name = body["name"].s();
-        item.price = body["price"].d();
+    menu.push_back({
+    body["name"].s(),
+    static_cast<float>(body["price"].d())
+});
+    saveMenu(menu);
 
-        menu.push_back(item);
-        saveMenu(menu);
+    return crow::response(201, "Menu item added");
+});
 
-        return crow::response(201, "Menu item added");
-    });
 
     CROW_ROUTE(app, "/order/add")
 .methods(crow::HTTPMethod::POST)
@@ -257,9 +255,12 @@ CROW_ROUTE(app, "/bills")
 .methods(crow::HTTPMethod::POST)
 ([&](const crow::request& req) {
 
-    if (!isAdminRequest(req))
-        return crow::response(403, "Admin only");
+   AuthContext ctx;
+crow::response authRes;
 
+if (!requireAdmin(req, ctx, authRes)) {
+    return authRes;
+}
     auto body = crow::json::load(req.body);
     if (!body || !body.has("vendor") || !body.has("amount"))
         return crow::response(400, "Invalid payload");
@@ -368,6 +369,8 @@ CROW_ROUTE(app, "/cash/start")
 }
 
     auto res = startDayController(dailyCash, r);
+    galla.denoms = r.openingDenoms;
+
 
     crow::json::wvalue out;
     out["openingCash"] = res.openingCash;
@@ -408,14 +411,47 @@ CROW_ROUTE(app, "/cash/status")
 });
 
 
+CROW_ROUTE(app, "/withdraw")
+.methods(crow::HTTPMethod::POST)
+([&](const crow::request& req) {
+
+    AuthContext ctx;
+    crow::response authRes;
+
+    if (!requireAdmin(req, ctx, authRes)) {
+        return authRes;
+    }
+
+    auto body = crow::json::load(req.body);
+    if (!body || !body.has("amount")) {
+        return crow::response(400, "Invalid payload");
+    }
+
+    WithdrawalRequest r;
+    r.amount = body["amount"].d();
+
+    auto result = withdrawalController(withdrawals, galla, r);
+
+    if (!result.success) {
+        return crow::response(400, result.message);
+    }
+
+    return crow::response(200, result.message);
+});
+
+
 // ===============================
 
 CROW_ROUTE(app, "/staff")
 .methods(crow::HTTPMethod::GET)
 ([&](const crow::request& req) {
 
-    if (!isAdminRequest(req))
-        return crow::response(403, "Admin only");
+    AuthContext ctx;
+crow::response authRes;
+
+if (!requireAdmin(req, ctx, authRes)) {
+    return authRes;
+}
 
     std::vector<Staff> staff;
     loadStaff(staff);
@@ -437,9 +473,12 @@ CROW_ROUTE(app, "/staff")
 .methods(crow::HTTPMethod::POST)
 ([&](const crow::request& req) {
 
-    if (!isAdminRequest(req))
-        return crow::response(403, "Admin only");
+    AuthContext ctx;
+crow::response authRes;
 
+if (!requireAdmin(req, ctx, authRes)) {
+    return authRes;
+}
     auto body = crow::json::load(req.body);
     if (!body || !body.has("name") || !body.has("role") || !body.has("salary"))
         return crow::response(400, "Invalid payload");
@@ -462,8 +501,12 @@ CROW_ROUTE(app, "/staff/pay")
 .methods(crow::HTTPMethod::POST)
 ([&](const crow::request& req) {
 
-    if (!isAdminRequest(req))
-        return crow::response(403, "Admin only");
+    AuthContext ctx;
+crow::response authRes;
+
+if (!requireAdmin(req, ctx, authRes)) {
+    return authRes;
+}
 
     auto body = crow::json::load(req.body);
     if (!body || !body.has("name"))
@@ -494,6 +537,7 @@ CROW_ROUTE(app, "/staff/pay")
     return crow::response(404, "Staff not found");
 });
 
+
 CROW_ROUTE(app, "/vendors")
 .methods(crow::HTTPMethod::GET)
 ([] {
@@ -514,9 +558,12 @@ CROW_ROUTE(app, "/vendors")
 .methods(crow::HTTPMethod::POST)
 ([&](const crow::request& req) {
 
-    if (!isAdminRequest(req))
-        return crow::response(403, "Admin only");
+    AuthContext ctx;
+crow::response authRes;
 
+if (!requireAdmin(req, ctx, authRes)) {
+    return authRes;
+}
     auto body = crow::json::load(req.body);
     if (!body || !body.has("name"))
         return crow::response(400, "Missing vendor name");
@@ -579,9 +626,12 @@ CROW_ROUTE(app, "/reports/cash-flow")
 .methods(crow::HTTPMethod::GET)
 ([&](const crow::request& req) {
 
-    if (!isAdminRequest(req))
-        return crow::response(403, "Admin only");
+    AuthContext ctx;
+crow::response authRes;
 
+if (!requireAdmin(req, ctx, authRes)) {
+    return authRes;
+}
     auto r = cashFlowController();
 
     crow::json::wvalue out;
@@ -598,9 +648,12 @@ CROW_ROUTE(app, "/reports/cash-mismatch")
 .methods(crow::HTTPMethod::GET)
 ([&](const crow::request& req) {
 
-    if (!isAdminRequest(req))
-        return crow::response(403, "Admin only");
+    AuthContext ctx;
+crow::response authRes;
 
+if (!requireAdmin(req, ctx, authRes)) {
+    return authRes;
+}
     auto r = cashMismatchController();
 
     // No closed day yet
@@ -656,7 +709,6 @@ CROW_ROUTE(app, "/auth/login")
     std::cout << "🚀 POS API server running on http://localhost:8080\n";
 
     app.port(8080)
-       .multithreaded()
        .run();
 
     return 0;

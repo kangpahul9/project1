@@ -1,4 +1,5 @@
 #include "Expenses.h"
+#include "DailyCash.h"
 
 #include <iostream>
 #include <fstream>
@@ -17,57 +18,57 @@ void loadExpenses(vector<Expense>& expenses) {
     string line;
 
     while (getline(file, line)) {
-    stringstream ss(line);
-    Expense e;
-    int paidFlag;
+        stringstream ss(line);
+        Expense e;
+        string type, date, paidStr;
 
-    // Try to read ID first
-    string firstField;
-    getline(ss, firstField, ',');
-
-    // If next char is digit → legacy file (no ID)
-    if (isdigit(firstField[0])) {
-        // Legacy line
-        e.id = generateId("EXP");
-        e.description = firstField;
-    } else {
-        // New format
-        e.id = firstField;
+        getline(ss, type, ',');   // EXP
+        getline(ss, date, ',');   // YYYY-MM-DD
         getline(ss, e.description, ',');
+        ss >> e.amount;
+        ss.ignore();              // comma
+        ss >> paidStr;
+
+        e.isPaid = (paidStr == "1");
+
+        if (e.isPaid) {
+            string mode;
+            ss.ignore();          // comma
+            ss >> mode;
+            e.paymentMode =
+                (mode == "CASH") ? PaymentMode::CASH : PaymentMode::UPI;
+        } else {
+            e.paymentMode = PaymentMode::CASH;
+        }
+
+        e.id = generateId("EXP");
+        expenses.push_back(e);
     }
-
-    ss >> e.amount >> paidFlag;
-    e.isPaid = (paidFlag == 1);
-
-    string modeStr;
-    if (ss >> modeStr) {
-        e.paymentMode =
-            (modeStr == "CASH") ? PaymentMode::CASH : PaymentMode::UPI;
-    } else {
-        e.paymentMode = PaymentMode::CASH;
-    }
-
-    expenses.push_back(e);
 }
-}
-
 
 void saveExpenses(const vector<Expense>& expenses) {
     ofstream file("expenses.txt");
 
+    vector<DailyCash> records;
+    loadDailyCash(records);
+    if (records.empty()) return;
+
+    string date = records.back().date;
+
     for (const auto& e : expenses) {
-        file << e.id << ","
-     << e.description << ","
-     << e.amount << " "
-     << (e.isPaid ? 1 : 0);
+        file << "EXP," << date << ","
+             << e.description << ","
+             << e.amount << ","
+             << (e.isPaid ? 1 : 0);
 
         if (e.isPaid) {
-            file << " " << paymentModeToString(e.paymentMode);
+            file << "," << paymentModeToString(e.paymentMode);
         }
 
         file << "\n";
     }
 }
+
 void showExpenses(const vector<Expense>& expenses) {
     if (expenses.empty()) {
         cout << "No expenses recorded.\n";

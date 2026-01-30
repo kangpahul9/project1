@@ -34,7 +34,7 @@ bool requireAuth(const crow::request& req, AuthContext& ctx, crow::response& res
 bool requireAdmin(const crow::request& req, AuthContext& ctx, crow::response& res) {
     if (!requireAuth(req, ctx, res)) return false;
 
-    if (ctx.role != "ADMIN") {
+    if (ctx.role != "ADMIN" && ctx.role != "OWNER") {
         res = crow::response(403, "Admin access required");
         return false;
     }

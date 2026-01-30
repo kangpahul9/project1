@@ -1,4 +1,5 @@
 #include "Order.h"
+#include "DailyCash.h"
 
 #include <iostream>
 #include <iomanip>
@@ -98,20 +99,28 @@ void printFinalBill(const vector<OrderItem>& order) {
 
     cout << "\nGrand Total: $" << fixed << setprecision(2) << total << endl;
 }
-
 void logOrder(const vector<OrderItem>& order) {
     ofstream file("orders.txt", ios::app);
     float total = 0;
 
+    // 🔑 get active business date
+    vector<DailyCash> records;
+    loadDailyCash(records);
+    if (records.empty()) return;
+
+    string date = records.back().date;
+
     for (const auto& item : order) {
-        file << item.name << ","
+        file << "ORDER," << date << ","
+             << item.name << ","
              << item.quantity << ","
              << item.price << "\n";
         total += item.total();
     }
 
-    // payment mode stored ONCE
-    file << "TOTAL," << fixed << setprecision(2) << total
+    file << "TOTAL," << date << ","
+         << fixed << setprecision(2) << total
          << "," << paymentModeToString(order[0].paymentMode) << "\n";
+
     file << "---\n";
 }

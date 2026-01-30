@@ -2,6 +2,7 @@
 #include "../DailyCash.h"
 #include <fstream>
 #include <sstream>
+#include <limits>
 
 using namespace std;
 
@@ -15,55 +16,78 @@ CashMismatchResponse cashMismatchController() {
     DailyCash d = records.back();
     if (!d.isClosed) return r;
 
-    float cashSales = 0, cashExpenses = 0, withdrawals = 0;
+    string reportDate = d.date;
 
-    // ---- Cash Sales ----
+    float cashSales = 0;
+    float cashExpenses = 0;
+    float withdrawals = 0;
+
+    // =========================
+    // Cash Sales (no date yet)
+    // =========================
     {
         ifstream f("orders.txt");
         string line;
+
         while (getline(f, line)) {
             if (line.rfind("TOTAL", 0) == 0) {
                 string label, mode;
                 float amt;
                 char comma;
+
                 stringstream ss(line);
                 ss >> label >> comma >> amt >> comma >> mode;
-                if (mode == "CASH") cashSales += amt;
+
+                if (mode == "CASH") {
+                    cashSales += amt;
+                }
             }
         }
     }
 
-    // ---- Expenses ----
+    // =========================
+    // Cash Expenses (no date yet)
+    // =========================
     {
         ifstream f("expenses.txt");
         string id, desc, mode;
         float amt;
         int paid;
+
         while (getline(f, id, ',')) {
             getline(f, desc, ',');
             f >> amt >> paid >> mode;
-            f.ignore();
-            if (paid == 1 && mode == "CASH")
+            f.ignore(numeric_limits<streamsize>::max(), '\n');
+
+            if (paid == 1 && mode == "CASH") {
                 cashExpenses += amt;
+            }
         }
     }
 
-    // ---- Withdrawals ----
+    // =========================
+    // Withdrawals (FILTERED)
+    // =========================
     {
         ifstream f("cash_withdrawals.txt");
         string id, date;
         float amt;
+
         while (getline(f, id, ',')) {
             getline(f, date, ',');
             f >> amt;
-            f.ignore();
-            withdrawals += amt;
+            f.ignore(numeric_limits<streamsize>::max(), '\n');
+
+            if (date == reportDate) {
+                withdrawals += amt;
+            }
         }
     }
 
     r.date = d.date;
     r.openingCash = d.openingCash;
-    r.expectedCash = d.openingCash + cashSales - cashExpenses - withdrawals;
+    r.expectedCash =
+        d.openingCash + cashSales - cashExpenses - withdrawals;
     r.closingCash = d.closingCash;
     r.difference = r.closingCash - r.expectedCash;
 

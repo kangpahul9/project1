@@ -6,6 +6,15 @@
 
 using namespace std;
 
+
+
+
+/*
+Accounting invariant:
+- Cash mismatch is ONLY valid after day is closed
+- expectedCash = openingCash + cashSales - cashExpenses - withdrawals
+- difference must be 0 for MATCHED
+*/
 CashMismatchResponse cashMismatchController() {
     vector<DailyCash> records;
     loadDailyCash(records);
@@ -25,25 +34,32 @@ CashMismatchResponse cashMismatchController() {
     // =========================
     // Cash Sales (no date yet)
     // =========================
-    {
-        ifstream f("orders.txt");
-        string line;
+    // ---- Cash Sales (DATED FORMAT) ----
+{
+    ifstream f("orders.txt");
+    string line;
 
-        while (getline(f, line)) {
-            if (line.rfind("TOTAL", 0) == 0) {
-                string label, mode;
-                float amt;
-                char comma;
+    while (getline(f, line)) {
+        if (line.rfind("TOTAL", 0) == 0) {
+            string type, date, mode;
+            float amt;
 
-                stringstream ss(line);
-                ss >> label >> comma >> amt >> comma >> mode;
+            stringstream ss(line);
+            getline(ss, type, ',');   // TOTAL
+            getline(ss, date, ',');   // YYYY-MM-DD
+            ss >> amt;
+            ss.ignore();              // comma
+            ss >> mode;
 
-                if (mode == "CASH") {
-                    cashSales += amt;
-                }
+            if (date != d.date) continue;   // 🔥 IMPORTANT
+
+            if (mode == "CASH") {
+                cashSales += amt;
             }
         }
     }
+}
+
 
     // =========================
     // Cash Expenses (no date yet)

@@ -30,18 +30,22 @@ CashFlowResponse cashFlowController() {
         string line;
         while (getline(file, line)) {
             if (line.rfind("TOTAL", 0) == 0) {
-                string label, mode;
-                float amt;
-                char comma;
+    string type, date, mode;
+    float amt;
 
-                stringstream ss(line);
-                ss >> label >> comma >> amt >> comma >> mode;
+    stringstream ss(line);
+    getline(ss, type, ',');   // TOTAL
+    getline(ss, date, ',');   // YYYY-MM-DD
+    ss >> amt;
+    ss.ignore();              // comma
+    ss >> mode;
 
-                if (mode == "CASH")
-                    r.cashIn += amt;
-                else
-                    r.bankIn += amt;
-            }
+    if (mode == "CASH") {
+        r.cashIn += amt;
+    } else {
+        r.bankIn += amt;
+    }
+}
         }
     }
 

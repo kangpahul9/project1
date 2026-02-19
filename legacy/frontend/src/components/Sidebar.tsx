@@ -29,9 +29,9 @@ export function Sidebar() {
     <div className="h-screen w-64 bg-card border-r flex flex-col fixed left-0 top-0 z-50">
       <div className="p-6">
         <h1 className="text-2xl font-bold font-display bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
-          OmniPOS
+          KangPos
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">Restaurant Manager</p>
+        <p className="text-sm text-muted-foreground mt-1">Continental Dhaba</p>
       </div>
 
       <nav className="flex-1 px-4 space-y-2">

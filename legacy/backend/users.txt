@@ -1,2 +1,0 @@
-U1,Admin,admin123,ADMIN
-U2,Rahul,staff123,STAFF

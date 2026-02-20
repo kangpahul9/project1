@@ -4,6 +4,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useToast } from "@/hooks/use-toast";
 
+
+
 interface User {
   id: number;
   name: string;
@@ -36,7 +38,9 @@ export function useLogin() {
 
   return useMutation({
     mutationFn: async (credentials: { pin: string }) => {
-      const res = await fetch("/auth/login", {
+      const API = import.meta.env.VITE_API_URL;
+
+      const res = await fetch(`${API}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(credentials),

@@ -11,6 +11,7 @@ import ordersRoutes from "./routes/orders.js";
 import cashRoutes from "./routes/cash.js";
 import reportsRoutes from "./routes/reports.js";
 import withdrawalsRouter from "./routes/withdrawals.js";
+import expensesRoutes from "./routes/expenses.js";
 
 
 
@@ -22,6 +23,7 @@ app.use(
     credentials: true,
   })
 );
+
 
 app.use(express.json());
 
@@ -53,7 +55,7 @@ app.use("/reports", reportsRoutes);
 
 app.use("/withdrawals", withdrawalsRouter);
 
-
+app.use("/expenses", expensesRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

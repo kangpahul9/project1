@@ -112,6 +112,51 @@ CREATE TABLE IF NOT EXISTS cash_withdrawals (
     business_day_id INTEGER NOT NULL 
         REFERENCES business_days(id) ON DELETE CASCADE,
     amount NUMERIC(10,2) NOT NULL,
+    -- reason TEXT,
     user_id INTEGER REFERENCES users(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE cash_withdrawals
+ADD COLUMN IF NOT EXISTS reason TEXT;
+
+CREATE TYPE withdrawal_reason AS ENUM (
+  'Owner Personal',
+  'Supplier Payment',
+  'Bank Deposit',
+  'Petty Cash',
+  'Staff Salary',
+  'Utilities',
+  'Emergency Expense',
+  'Loan Repayment',
+  'Investment Transfer',
+  'Other'
+);
+
+ALTER TABLE cash_withdrawals
+DROP COLUMN IF EXISTS reason;
+
+ALTER TABLE cash_withdrawals
+ADD COLUMN reason withdrawal_reason;
+
+CREATE TABLE cash_deposits (
+    id SERIAL PRIMARY KEY,
+    business_day_id INTEGER REFERENCES business_days(id) ON DELETE CASCADE,
+    amount NUMERIC(10,2) NOT NULL,
+    user_id INTEGER REFERENCES users(id),
+    reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE expenses (
+    id SERIAL PRIMARY KEY,
+    business_day_id INTEGER REFERENCES business_days(id) ON DELETE CASCADE,
+    amount NUMERIC(10,2) NOT NULL,
+    category TEXT NOT NULL,
+    description TEXT,
+    payment_method TEXT CHECK (payment_method IN ('cash', 'card', 'online')) NOT NULL,
+    user_id INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE cash_deposits ADD COLUMN description TEXT;

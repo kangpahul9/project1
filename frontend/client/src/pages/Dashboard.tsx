@@ -1,3 +1,4 @@
+
 import {
   useCurrentBusinessDay,
   useOpenBusinessDay,
@@ -30,7 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useOrders } from "@/hooks/use-orders";
 import { Link } from "wouter";
 import { useCurrentCash } from "@/hooks/use-cash";
-import { useWithdrawCash } from "@/hooks/use-withdraw";
+import { useWithdrawCash,useWithdrawalHistory,useDepositCash,useDepositHistory } from "@/hooks/use-withdraw";
 import { DenominationSelector } from "@/components/DenominationSelector";
 
 
@@ -43,10 +44,13 @@ export default function Dashboard() {
   const { toast } = useToast();
   const { data: drawerCash } = useCurrentCash(currentDay?.id);
 
+  const [withdrawReason, setWithdrawReason] = useState("");
+  const [withdrawDescription, setWithdrawDescription] = useState("");
+
   const [openDialogOpen, setOpenDialogOpen] = useState(false);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [cashDialog, setCashDialog] = useState(false);
-
+const { mutate: depositCash } = useDepositCash();
 
  const [denominations, setDenominations] = useState([
   { note: 500, qty: 0 },
@@ -141,6 +145,17 @@ const withdrawTotal = withdrawBreakdown.reduce(
   0
 );
 
+const [depositOpen, setDepositOpen] = useState(false);
+
+const [depositBreakdown, setDepositBreakdown] = useState(
+  DENOMS.map(d => ({ note: d, qty: 0 }))
+);
+
+const depositTotal = depositBreakdown.reduce(
+  (sum, n) => sum + n.note * n.qty,
+  0
+);
+
 
 
 const handleWithdraw = () => {
@@ -155,16 +170,38 @@ const handleWithdraw = () => {
     return;
   }
 
+  if (!withdrawReason) {
+  toast({
+    title: "Select Reason",
+    description: "Please choose withdrawal reason.",
+    variant: "destructive",
+  });
+  return;
+}
+
+if (withdrawReason === "Other" && !withdrawDescription.trim()) {
+  toast({
+    title: "Description Required",
+    description: "Please enter description for 'Other'.",
+    variant: "destructive",
+  });
+  return;
+}
+
   withdrawCash(
     {
       businessDayId: currentDay?.id,
       breakdown: withdrawBreakdown,
+      reason: withdrawReason,
+      description: withdrawDescription,
     },
     {
       onSuccess: () => {
-        setWithdrawOpen(false);
-        setWithdrawBreakdown(DENOMS.map(d => ({ note: d, qty: 0 })));
-      },
+  setWithdrawOpen(false);
+  setWithdrawReason("");
+  setWithdrawDescription("");
+  setWithdrawBreakdown(DENOMS.map(d => ({ note: d, qty: 0 })));
+},
     }
   );
 };
@@ -230,6 +267,18 @@ const handleWithdraw = () => {
     >
       Withdraw Cash
     </Button>
+    <Link href="/withdrawals-history">
+  <Button className="bg-blue-600 hover:bg-blue-700 text-white ml-3">
+    View Withdrawal/Deposit History
+  </Button>
+</Link>
+
+<Button
+  className="bg-green-600 hover:bg-green-700 text-white"
+  onClick={() => setDepositOpen(true)}
+>
+  Add Cash
+</Button>
   </>
 ) : (
   <Button
@@ -384,7 +433,42 @@ const handleWithdraw = () => {
   breakdown={withdrawBreakdown}
   setBreakdown={setWithdrawBreakdown}
 />
+<div className="mt-4">
+  <label className="block text-sm font-medium mb-2">
+    Withdrawal Reason
+  </label>
 
+  <select
+    className="w-full border rounded-md p-2"
+    value={withdrawReason}
+    onChange={(e) => setWithdrawReason(e.target.value)}
+  >
+    <option value="">Select Reason</option>
+    <option>Owner Personal</option>
+    <option>Supplier Payment</option>
+    <option>Bank Deposit</option>
+    <option>Petty Cash</option>
+    <option>Staff Salary</option>
+    <option>Utilities</option>
+    <option>Emergency Expense</option>
+    <option>Loan Repayment</option>
+    <option>Investment Transfer</option>
+    <option>Other</option>
+  </select>
+  <div className="mt-4">
+  <label className="block text-sm font-medium mb-2">
+    Description {withdrawReason === "Other" && <span className="text-red-500">*</span>}
+  </label>
+
+  <textarea
+    className="w-full border rounded-md p-2"
+    rows={3}
+    placeholder="Enter details..."
+    value={withdrawDescription}
+    onChange={(e) => setWithdrawDescription(e.target.value)}
+  />
+</div>
+</div>
 <div className="text-lg font-bold pt-4 text-center">
   Total Withdrawal: ₹{withdrawTotal}
 </div>
@@ -403,6 +487,67 @@ const handleWithdraw = () => {
       >
         Confirm Withdrawal
       </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+{/* ================= DEPOSIT CASH DIALOG ================= */}
+<Dialog open={depositOpen} onOpenChange={setDepositOpen}>
+  <DialogContent className="max-w-3xl">
+    <DialogHeader>
+      <DialogTitle>Add Cash to Drawer</DialogTitle>
+      <DialogDescription>
+        Add denominations to drawer (mid-day refill).
+      </DialogDescription>
+    </DialogHeader>
+
+    <DenominationSelector
+      breakdown={depositBreakdown}
+      setBreakdown={setDepositBreakdown}
+    />
+
+    <div className="text-lg font-bold pt-4 text-center">
+      Total Deposit: ₹{depositTotal}
+    </div>
+
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setDepositOpen(false)}>
+        Cancel
+      </Button>
+
+      <Button
+  className="bg-green-600 text-white"
+  onClick={() => {
+    const hasCash = depositBreakdown.some(n => n.qty > 0);
+
+    if (!hasCash) {
+      toast({
+        title: "Invalid Deposit",
+        description: "Select at least one denomination.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    depositCash(
+      {
+        businessDayId: currentDay?.id,
+        breakdown: depositBreakdown,
+        reason: "Drawer Refill",
+      },
+      {
+        onSuccess: () => {
+          setDepositOpen(false);
+          setDepositBreakdown(
+            DENOMS.map(d => ({ note: d, qty: 0 }))
+          );
+        },
+      }
+    );
+  }}
+>
+  Confirm Deposit
+</Button>
     </DialogFooter>
   </DialogContent>
 </Dialog>

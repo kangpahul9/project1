@@ -39,7 +39,7 @@ export function useLogin() {
   return useMutation({
     mutationFn: async (credentials: { pin: string }) => {
       const API = import.meta.env.VITE_API_URL;
-
+console.log("API URL:", import.meta.env.VITE_API_URL);
       const res = await fetch(`${API}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

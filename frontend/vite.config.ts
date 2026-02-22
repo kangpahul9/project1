@@ -26,6 +26,7 @@ export default defineConfig({
       "/business-days": "http://localhost:3000",
       "/withdrawals": "http://localhost:3000",
       "/reports": "http://localhost:3000",
+      
     },
   },
 });

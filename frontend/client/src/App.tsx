@@ -16,6 +16,7 @@ import NotFound from "@/pages/not-found";
 import UnpaidOrders from "@/pages/unpaid";
 import Reports from "@/pages/Reports";
 import PrintBill from "@/pages/PrintBill";
+import WithdrawalHistory from "@/pages/withdrawals-history";
 
 
 
@@ -64,6 +65,9 @@ function Router() {
       </Route>
       <Route path="/print/:billNumber">
         <ProtectedRoute component={PrintBill} />
+      </Route>
+      <Route path="/withdrawals-history">
+        <ProtectedRoute component={WithdrawalHistory} />
       </Route>
 
       <Route component={NotFound} />

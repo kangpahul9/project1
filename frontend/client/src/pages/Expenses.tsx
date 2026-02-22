@@ -1,15 +1,12 @@
 import { Sidebar } from "@/components/Sidebar";
 import { useExpenses, useCreateExpense } from "@/hooks/use-expenses";
-import { useVendors } from "@/hooks/use-vendors";
 import { useCurrentBusinessDay } from "@/hooks/use-business-days";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { insertExpenseSchema } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus, Wallet } from "lucide-react";
 import { useState } from "react";
@@ -17,24 +14,30 @@ import { format } from "date-fns";
 
 export default function Expenses() {
   const { data: expenses, isLoading } = useExpenses();
-  const { data: vendors } = useVendors();
   const { data: currentDay } = useCurrentBusinessDay();
   const { mutate: createExpense, isPending } = useCreateExpense();
   const [open, setOpen] = useState(false);
 
   const form = useForm({
-    resolver: zodResolver(insertExpenseSchema),
-    defaultValues: {
-      description: "",
-      amount: 0,
-      category: "supplies",
-      paymentMode: "cash",
-      vendorId: 0,
-    }
-  });
+  defaultValues: {
+    description: "",
+    amount: 0,
+    category: "supplies",
+    paymentMode: "cash",
+  }
+});
 
   const onSubmit = (data: any) => {
     if (!currentDay) return; // Should be handled by disabling button
+    if (!data.description.trim()) {
+  alert("Description is required");
+  return;
+}
+
+if (data.amount <= 0) {
+  alert("Amount must be greater than 0");
+  return;
+}
     createExpense({ ...data, businessDayId: currentDay.id }, {
       onSuccess: () => {
         setOpen(false);
@@ -91,7 +94,7 @@ export default function Expenses() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Category</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select value={field.value} onValueChange={field.onChange}>
                             <FormControl>
                               <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                             </FormControl>
@@ -108,36 +111,13 @@ export default function Expenses() {
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="vendorId"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Vendor</FormLabel>
-                          <Select 
-                            onValueChange={(val) => field.onChange(Number(val))}
-                            value={field.value?.toString()}
-                          >
-                            <FormControl>
-                              <SelectTrigger><SelectValue placeholder="Select vendor" /></SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {vendors?.map(v => (
-                                <SelectItem key={v.id} value={v.id.toString()}>{v.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
                      <FormField
                       control={form.control}
                       name="paymentMode"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Payment Mode</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select value={field.value} onValueChange={field.onChange}>
                             <FormControl>
                               <SelectTrigger><SelectValue placeholder="Select mode" /></SelectTrigger>
                             </FormControl>
@@ -160,33 +140,66 @@ export default function Expenses() {
           </Dialog>
         </div>
 
-        <div className="grid gap-4">
-          {expenses?.map(expense => (
-            <Card key={expense.id} className="hover:shadow-md transition-all">
-              <CardContent className="flex items-center justify-between p-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600">
-                    <Wallet className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold">{expense.description}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {expense.vendor?.name} • {format(new Date(expense.createdAt!), "MMM d, yyyy")}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold text-lg text-red-600">-₹{expense.amount}</p>
-                  <p className="text-xs text-muted-foreground uppercase">{expense.paymentMode}</p>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-          {expenses?.length === 0 && (
-            <div className="text-center py-12 text-muted-foreground">No expenses recorded.</div>
-          )}
-        </div>
+        {/* Total Expenses Summary */}
+{!isLoading && (
+  <div className="mb-6 bg-white p-6 rounded-xl shadow">
+    <h3 className="text-lg font-semibold">Total Expenses</h3>
+    <p className="text-2xl font-bold text-red-600 mt-2">
+      ₹{
+        expenses?.reduce(
+          (sum: number, e: any) => sum + Number(e.amount),
+          0
+        ) || 0
+      }
+    </p>
+  </div>
+)}
+
+        {isLoading && (
+  <div className="text-center py-10 text-muted-foreground">
+    Loading expenses...
+  </div>
+)}
+
+{!isLoading && (
+  <div className="grid gap-4">
+    {expenses?.map((expense: any) => (
+      <Card key={expense.id} className="hover:shadow-md transition-all">
+        <CardContent className="flex items-center justify-between p-6">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600">
+              <Wallet className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-semibold">{expense.description}</h3>
+              <p className="text-sm text-muted-foreground">
+                {format(new Date(expense.created_at), "MMM d, yyyy")}
+              </p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="font-bold text-lg text-red-600">
+              -₹{expense.amount}
+            </p>
+            <p className="text-xs text-muted-foreground uppercase">
+              {expense.payment_method}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    ))}
+
+    {expenses?.length === 0 && (
+      <div className="text-center py-12 text-muted-foreground">
+        No expenses recorded.
+      </div>
+    )}
+  </div>
+)}
       </main>
     </div>
+    
   );
+  
 }
+

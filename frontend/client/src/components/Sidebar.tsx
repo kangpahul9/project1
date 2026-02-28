@@ -10,7 +10,8 @@ import {
   ShoppingBag,
   BarChart3,
   Menu,
-  X
+  X,
+  CalendarDays
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { label: "Expenses", href: "/expenses", icon: Wallet },
   { label: "Vendors", href: "/vendors", icon: ShoppingBag },
   { label: "Staff", href: "/staff", icon: Users },
+  { label: "Roster", href: "/roster", icon: CalendarDays },
 ];
 
 export function Sidebar() {

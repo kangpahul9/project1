@@ -138,6 +138,19 @@ if (reason === "Other" && (!description || description.trim() === "")) {
       [businessDayId, withdrawalTotal, req.user.id, reason, description && description.trim() !== "" ? description.trim() : null]
     );
 
+    /* ===============================
+   LEDGER ENTRY (WITHDRAWAL)
+=============================== */
+
+await client.query(
+  `
+  INSERT INTO cash_ledger
+  (business_day_id, type, reference_id, amount)
+  VALUES ($1, 'withdrawal', currval('cash_withdrawals_id_seq'), $2)
+  `,
+  [businessDayId, -withdrawalTotal]
+);
+
   if (EXPENSE_REASONS.includes(reason)) {
 
   await client.query(
@@ -266,6 +279,19 @@ router.post("/deposit", authenticate, async (req, res) => {
       `,
       [businessDayId, totalAmount, req.user.id, reason || "Drawer Refill"]
     );
+
+    /* ===============================
+   LEDGER ENTRY (DEPOSIT)
+=============================== */
+
+await client.query(
+  `
+  INSERT INTO cash_ledger
+  (business_day_id, type, reference_id, amount)
+  VALUES ($1, 'sale', currval('cash_deposits_id_seq'), $2)
+  `,
+  [businessDayId, totalAmount]
+);
 
     await client.query("COMMIT");
 

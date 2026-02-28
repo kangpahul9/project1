@@ -102,6 +102,7 @@ router.get("/weekly-summary", authenticate, async (req, res) => {
     const currentSales = Number(row.total_sales || 0);
     const previousSales = Number(previousWeek.rows[0].total_sales || 0);
 
+
     let growth = 0;
     if (previousSales > 0) {
       growth = ((currentSales - previousSales) / previousSales) * 100;

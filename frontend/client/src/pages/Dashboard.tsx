@@ -3,6 +3,7 @@ import {
   useCurrentBusinessDay,
   useOpenBusinessDay,
   useCloseBusinessDay,
+  useExpectedCash,
 } from "@/hooks/use-business-days";
 import { useAuthStore } from "@/hooks/use-auth";
 import { StatCard } from "@/components/StatCard";
@@ -40,12 +41,15 @@ export default function Dashboard() {
   const { data: currentDay, isLoading } = useCurrentBusinessDay();
   const { mutate: openDay, isPending: isOpening } = useOpenBusinessDay();
   const { mutate: closeDay, isPending: isClosing } = useCloseBusinessDay();
-  const { data: orders } = useOrders(currentDay?.id);
+  const { data: orders } = useOrders();
   const { toast } = useToast();
   const { data: drawerCash } = useCurrentCash(currentDay?.id);
+  const { data: expectedData } = useExpectedCash();
 
   const [withdrawReason, setWithdrawReason] = useState("");
   const [withdrawDescription, setWithdrawDescription] = useState("");
+  const [closingReason, setClosingReason] = useState("");
+  
 
   const [openDialogOpen, setOpenDialogOpen] = useState(false);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
@@ -84,15 +88,27 @@ const { mutate: depositCash } = useDepositCash();
   };
 
   const onCloseDay = () => {
+
+  if (hasMismatch && !closingReason.trim()) {
+    toast({
+      title: "Reason Required",
+      description: "Please explain the cash mismatch before closing.",
+      variant: "destructive",
+    });
+    return;
+  }
+
   closeDay(
     {
       breakdown: closingBreakdown,
       total: closingTotal,
+      reason: hasMismatch ? closingReason : null,
     },
     {
       onSuccess: () => {
         setCloseDialogOpen(false);
         setClosingBreakdown(DENOMS.map(d => ({ note: d, qty: 0 })));
+        setClosingReason("");
       },
     }
   );
@@ -215,6 +231,10 @@ if (withdrawReason === "Other" && !withdrawDescription.trim()) {
     );
   }
 
+  const expectedCash = expectedData?.expectedCash ?? 0;
+const difference = closingTotal - expectedCash;
+const hasMismatch = Math.abs(difference) > 0.01;
+
   return (
     <div className="flex bg-gray-50 min-h-screen">
       <Sidebar />
@@ -225,8 +245,8 @@ if (withdrawReason === "Other" && !withdrawDescription.trim()) {
           <div>
             <h1 className="text-3xl font-bold">Dashboard</h1>
             <p className="text-muted-foreground mt-1">
-              Overview of today's performance
-            </p>
+  Business Day: {currentDay?.date}
+</p>
           </div>
 
           <div className="flex items-center gap-4">
@@ -245,50 +265,6 @@ if (withdrawReason === "Other" && !withdrawDescription.trim()) {
               {currentDay ? "Business Open" : "Business Closed"}
             </div>
 
-{currentDay ? (
-  <>
-    <Button
-      variant="outline"
-      onClick={() => setCashDialog(true)}
-    >
-      Check Drawer Cash
-    </Button>
-
-    <Button
-      className="bg-red-600 hover:bg-red-700 text-white"
-      onClick={() => setCloseDialogOpen(true)}
-    >
-      Close Day
-    </Button>
-
-    <Button
-      className="bg-amber-600 hover:bg-amber-700 text-white"
-      onClick={() => setWithdrawOpen(true)}
-    >
-      Withdraw Cash
-    </Button>
-    <Link href="/withdrawals-history">
-  <Button className="bg-blue-600 hover:bg-blue-700 text-white ml-3">
-    View Withdrawal/Deposit History
-  </Button>
-</Link>
-
-<Button
-  className="bg-green-600 hover:bg-green-700 text-white"
-  onClick={() => setDepositOpen(true)}
->
-  Add Cash
-</Button>
-  </>
-) : (
-  <Button
-    className="bg-primary text-white"
-    onClick={() => setOpenDialogOpen(true)}
-  >
-    Open Day
-  </Button>
-)}
-
 
 
             
@@ -303,12 +279,12 @@ if (withdrawReason === "Other" && !withdrawDescription.trim()) {
             {/* STATS */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
               <StatCard
-                title="Total Sales"
+                title="Today's Sales"
                 value={`₹${totalSales}`}
                 icon={DollarSign}
               />
               <StatCard
-                title="Total Orders"
+                title="Today's Orders"
                 value={totalOrders}
                 icon={ShoppingBag}
               />
@@ -328,12 +304,100 @@ if (withdrawReason === "Other" && !withdrawDescription.trim()) {
               />
             </div>
 
+          
+{/* ACTION CARDS */}
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-6">
+
+  <div
+    onClick={() => setWithdrawOpen(true)}
+    className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
+  >
+    <div className="flex items-center gap-4">
+      <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center">
+        <DollarSign className="w-7 h-7" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-lg">Withdraw Cash</h3>
+        <p className="text-sm text-muted-foreground">
+          Remove cash from drawer
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div
+    onClick={() => setDepositOpen(true)}
+    className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
+  >
+    <div className="flex items-center gap-4">
+      <div className="w-14 h-14 bg-green-100 text-green-600 rounded-full flex items-center justify-center">
+        <TrendingUp className="w-7 h-7" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-lg">Add Cash</h3>
+        <p className="text-sm text-muted-foreground">
+          Deposit into drawer
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div
+    onClick={() => setCashDialog(true)}
+    className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
+  >
+    <div className="flex items-center gap-4">
+      <div className="w-14 h-14 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
+        <CreditCard className="w-7 h-7" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-lg">Drawer Cash</h3>
+        <p className="text-sm text-muted-foreground">
+          View real-time balance
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div
+    onClick={() => setCloseDialogOpen(true)}
+    className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
+  >
+    <div className="flex items-center gap-4">
+      <div className="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center">
+        <AlertCircle className="w-7 h-7" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-lg">Close Day</h3>
+        <p className="text-sm text-muted-foreground">
+          Finalize business day
+        </p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+
             {/* ACTIONS */}
+            <div className="mt-10"></div>
             <Link href="/unpaid">
-              <Button className="bg-amber-500 hover:bg-amber-600 text-white">
-                View Unpaid Orders
-              </Button>
-            </Link>
+  <div className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border">
+    <div className="flex items-center gap-4">
+      <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center">
+        <ShoppingBag className="w-7 h-7" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-lg">Unpaid Orders</h3>
+        <p className="text-sm text-muted-foreground">
+          View pending customer payments
+        </p>
+      </div>
+    </div>
+  </div>
+</Link>
+
+            
           </>
         ) : (
           <div className="bg-white rounded-xl p-12 text-center border shadow-sm">
@@ -395,10 +459,37 @@ if (withdrawReason === "Other" && !withdrawDescription.trim()) {
     />
 
     {/* 💵 TOTAL DISPLAY */}
-    <div className="text-center text-xl font-bold mt-6">
-      Closing Cash Count: ₹{closingTotal}
-    </div>
+<div className="text-center text-xl font-bold mt-6">
+  Closing Cash Count: ₹{closingTotal}
+</div>
 
+<div className="text-center text-md mt-2">
+  Expected Cash (Ledger): ₹{expectedCash}
+</div>
+
+<div
+  className={`text-center font-semibold mt-1 ${
+    hasMismatch ? "text-red-600" : "text-green-600"
+  }`}
+>
+  Difference: ₹{difference}
+</div>
+
+{/* 🔴 SHOW REASON IF MISMATCH */}
+{hasMismatch && (
+  <div className="mt-4">
+    <label className="block text-sm font-medium mb-2 text-red-600">
+      Cash Mismatch Reason (Required)
+    </label>
+    <textarea
+      className="w-full border rounded-md p-2"
+      rows={3}
+      placeholder="Explain why cash mismatch occurred..."
+      value={closingReason}
+      onChange={(e) => setClosingReason(e.target.value)}
+    />
+  </div>
+)}
     <DialogFooter>
       <Button
         variant="outline"

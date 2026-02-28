@@ -12,6 +12,10 @@ import cashRoutes from "./routes/cash.js";
 import reportsRoutes from "./routes/reports.js";
 import withdrawalsRouter from "./routes/withdrawals.js";
 import expensesRoutes from "./routes/expenses.js";
+import vendorsRoutes from "./routes/vendors.js";
+import staffRoutes from "./routes/staff.js";
+import path from "path";
+
 
 
 
@@ -56,6 +60,12 @@ app.use("/reports", reportsRoutes);
 app.use("/withdrawals", withdrawalsRouter);
 
 app.use("/expenses", expensesRoutes);
+
+app.use("/vendors", vendorsRoutes);
+
+app.use("/uploads", express.static("uploads"));
+
+app.use("/staff", staffRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

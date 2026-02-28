@@ -17,7 +17,7 @@ import UnpaidOrders from "@/pages/unpaid";
 import Reports from "@/pages/Reports";
 import PrintBill from "@/pages/PrintBill";
 import WithdrawalHistory from "@/pages/withdrawals-history";
-
+import Roster from "@/pages/Roster";
 
 
 
@@ -68,6 +68,9 @@ function Router() {
       </Route>
       <Route path="/withdrawals-history">
         <ProtectedRoute component={WithdrawalHistory} />
+      </Route>
+      <Route path="/roster">
+        <ProtectedRoute component={Roster} />
       </Route>
 
       <Route component={NotFound} />

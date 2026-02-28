@@ -273,7 +273,31 @@ VALUES ($1,$2,$3,$4,$5,$6)
         [order.id, item.menuItemId,item.name, item.quantity, item.price, item.price]
       );
     }
+    /* ===============================
+   CASH LEDGER ENTRY
+=============================== */
 
+if (paymentMethod === "cash") {
+  await client.query(
+    `
+    INSERT INTO cash_ledger
+    (business_day_id, type, reference_id, amount)
+    VALUES ($1, 'sale', $2, $3)
+    `,
+    [businessDayId, order.id, total]
+  );
+}
+
+if (paymentMethod === "unpaid" && paidAmount > 0) {
+  await client.query(
+    `
+    INSERT INTO cash_ledger
+    (business_day_id, type, reference_id, amount)
+    VALUES ($1, 'sale', $2, $3)
+    `,
+    [businessDayId, order.id, paidAmount]
+  );
+}
     await client.query("COMMIT");
 
     res.status(201).json({
@@ -483,6 +507,21 @@ WHERE id = $1`,
         id
       ]
     );
+
+    /* ===============================
+   LEDGER ENTRY FOR CASH PAYMENT
+=============================== */
+
+if (paymentMethod === "cash" && receivedAmount > 0) {
+  await client.query(
+    `
+    INSERT INTO cash_ledger
+    (business_day_id, type, reference_id, amount)
+    VALUES ($1, 'sale', $2, $3)
+    `,
+    [order.business_day_id, order.id, receivedAmount]
+  );
+}
 
     await client.query("COMMIT");
 

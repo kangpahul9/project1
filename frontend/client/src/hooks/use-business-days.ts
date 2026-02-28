@@ -82,6 +82,7 @@ export function useCloseBusinessDay() {
     mutationFn: async (data: {
       breakdown: { note: number; qty: number }[];
       total: number;
+      reason?: string | null;
     }) => {
       const res = await fetch(`${API_BASE}/business-days/close`, {
         method: "POST",
@@ -98,12 +99,28 @@ export function useCloseBusinessDay() {
     },
 
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/business-days/current"] });
-      toast({
-        title: "Business Day Closed",
-        description: "Day closed successfully.",
-      });
-    },
+  queryClient.invalidateQueries({ queryKey: ["/business-days/current"] });
+  queryClient.invalidateQueries({ queryKey: ["/business-days/expected-cash"] });
+
+  toast({
+    title: "Business Day Closed",
+    description: "Day closed successfully.",
+  });
+},
   });
 }
 
+export function useExpectedCash() {
+  return useQuery({
+    queryKey: ["/business-days/expected-cash"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/business-days/expected-cash`, {
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) throw new Error("Failed to fetch expected cash");
+
+      return await res.json();
+    },
+  });
+}

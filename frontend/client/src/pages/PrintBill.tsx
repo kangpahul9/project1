@@ -61,6 +61,7 @@ export default function PrintBill() {
       {/* FOOTER */}
       <div className="mt-3 text-center">
         Thank you 🙏
+        <p>Please Visit Again</p>
       </div>
     </div>
   );

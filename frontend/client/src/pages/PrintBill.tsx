@@ -21,8 +21,8 @@ export default function PrintBill() {
     <div className="p-4 text-sm font-mono w-[80mm]">
       {/* HEADER */}
       <div className="text-center mb-3">
-        <h2 className="font-bold text-lg">KangPOS</h2>
-        <p>Continental Dhaba</p>
+        <h2 className="font-bold text-lg">Continental Dhaba</h2>
+        <p>KangPOS</p>
       </div>
 
       {/* BILL INFO */}

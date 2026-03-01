@@ -37,6 +37,7 @@ import { DenominationSelector } from "@/components/DenominationSelector";
 
 
 
+
 export default function Dashboard() {
   const { data: currentDay, isLoading } = useCurrentBusinessDay();
   const { mutate: openDay, isPending: isOpening } = useOpenBusinessDay();
@@ -49,6 +50,11 @@ export default function Dashboard() {
   const [withdrawReason, setWithdrawReason] = useState("");
   const [withdrawDescription, setWithdrawDescription] = useState("");
   const [closingReason, setClosingReason] = useState("");
+  const [withdrawHistoryOpen, setWithdrawHistoryOpen] = useState(false);
+const [depositHistoryOpen, setDepositHistoryOpen] = useState(false);
+
+const { data: withdrawHistory } = useWithdrawalHistory(currentDay?.id);
+const { data: depositHistory } = useDepositHistory(currentDay?.id);
   
 
   const [openDialogOpen, setOpenDialogOpen] = useState(false);
@@ -375,7 +381,39 @@ const hasMismatch = Math.abs(difference) > 0.01;
       </div>
     </div>
   </div>
+<div
+  onClick={() => setWithdrawHistoryOpen(true)}
+  className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
+>
+  <div className="flex items-center gap-4">
+    <div className="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center">
+      <DollarSign className="w-7 h-7" />
+    </div>
+    <div>
+      <h3 className="font-semibold text-lg">Withdrawal History</h3>
+      <p className="text-sm text-muted-foreground">
+        View cash removed today
+      </p>
+    </div>
+  </div>
+</div>
 
+<div
+  onClick={() => setDepositHistoryOpen(true)}
+  className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
+>
+  <div className="flex items-center gap-4">
+    <div className="w-14 h-14 bg-green-100 text-green-600 rounded-full flex items-center justify-center">
+      <TrendingUp className="w-7 h-7" />
+    </div>
+    <div>
+      <h3 className="font-semibold text-lg">Deposit History</h3>
+      <p className="text-sm text-muted-foreground">
+        View cash added today
+      </p>
+    </div>
+  </div>
+</div>
 </div>
 
 
@@ -400,14 +438,21 @@ const hasMismatch = Math.abs(difference) > 0.01;
             
           </>
         ) : (
-          <div className="bg-white rounded-xl p-12 text-center border shadow-sm">
-            <h3 className="text-lg font-semibold text-gray-900">
-              Business Closed
-            </h3>
-            <p className="text-gray-500 mt-2">
-              Start a new business day to begin taking orders.
-            </p>
-          </div>
+  <div className="bg-white rounded-xl p-12 text-center border shadow-sm">
+    <h3 className="text-lg font-semibold text-gray-900">
+      Business Closed
+    </h3>
+    <p className="text-gray-500 mt-2 mb-6">
+      Start a new business day to begin taking orders.
+    </p>
+
+    <Button
+      className="bg-primary text-white"
+      onClick={() => setOpenDialogOpen(true)}
+    >
+      Open Business Day
+    </Button>
+  </div>
         )}
       </main>
 
@@ -640,6 +685,64 @@ const hasMismatch = Math.abs(difference) > 0.01;
   Confirm Deposit
 </Button>
     </DialogFooter>
+  </DialogContent>
+</Dialog>
+<Dialog open={withdrawHistoryOpen} onOpenChange={setWithdrawHistoryOpen}>
+  <DialogContent className="max-w-2xl">
+    <DialogHeader>
+      <DialogTitle>Withdrawal History</DialogTitle>
+    </DialogHeader>
+
+    <div className="space-y-3 max-h-[400px] overflow-y-auto">
+      {withdrawHistory?.length === 0 && (
+        <p className="text-muted-foreground">No withdrawals today.</p>
+      )}
+
+      {withdrawHistory?.map((w: any) => (
+        <div
+          key={w.id}
+          className="border rounded-lg p-4 flex justify-between"
+        >
+          <div>
+            <p className="font-medium">₹{w.amount}</p>
+            <p className="text-xs text-muted-foreground">
+              {w.reason}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {new Date(w.created_at).toLocaleString()}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </DialogContent>
+</Dialog>
+
+<Dialog open={depositHistoryOpen} onOpenChange={setDepositHistoryOpen}>
+  <DialogContent className="max-w-2xl">
+    <DialogHeader>
+      <DialogTitle>Deposit History</DialogTitle>
+    </DialogHeader>
+
+    <div className="space-y-3 max-h-[400px] overflow-y-auto">
+      {depositHistory?.length === 0 && (
+        <p className="text-muted-foreground">No deposits today.</p>
+      )}
+
+      {depositHistory?.map((d: any) => (
+        <div
+          key={d.id}
+          className="border rounded-lg p-4 flex justify-between"
+        >
+          <div>
+            <p className="font-medium">₹{d.amount}</p>
+            <p className="text-xs text-muted-foreground">
+              {new Date(d.created_at).toLocaleString()}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
   </DialogContent>
 </Dialog>
 

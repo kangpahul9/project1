@@ -16,7 +16,7 @@ import { useMarkOrderPaid, useUnpaidOrders } from "@/hooks/use-unpaid-orders";
 import { useOrderById } from "@/hooks/use-unpaid-orders";
 import { useEffect } from "react";
 import { DenominationSelector } from "@/components/DenominationSelector";
-
+import QRCode from "qrcode";
 
 
 
@@ -33,6 +33,7 @@ const unpaidOrderId = searchParams.get("pay");
 const isUnpaidPayment = !!unpaidOrderId;
 
 const { data: unpaidOrder, isLoading: unpaidLoading } = useOrderById(unpaidOrderId);
+const [upiQr, setUpiQr] = useState<string | null>(null);
 
 
 
@@ -146,6 +147,13 @@ const adjustNote = (note:number, delta:number) => {
     )
   );
 };
+useEffect(() => {
+  if (paymentMode === "upi") {
+    QRCode.toDataURL(generateUpiLink())
+      .then(setUpiQr)
+      .catch(() => setUpiQr(null));
+  }
+}, [paymentMode, cartTotal]);
 
 const totalReceived = cashBreakdown.reduce(
   (sum, n) => sum + n.note * n.qty,
@@ -172,7 +180,7 @@ const totalReceived = cashBreakdown.reduce(
      GENERATE REAL UPI LINK
   =============================== */
   const generateUpiLink = () => {
-    const upiId = "yourbusiness@upi"; // change later
+    const upiId = "q16958818@ybl"; // change later
     const name = "My Restaurant";
     const amount = cartTotal.toFixed(2);
     const note = "POS Payment";
@@ -705,23 +713,41 @@ onClick={() => finalizeSale(latestBill || undefined)}
 
 
           {paymentMode === "upi" && (
-            <div className="space-y-3 text-center">
-              <a
-                href={generateUpiLink()}
-                className="bg-black text-white px-4 py-2 rounded"
-              >
-                Open UPI App
-              </a>
+  <div className="space-y-6 text-center">
 
-              <div className="w-48 h-48 bg-gray-200 mx-auto flex items-center justify-center rounded">
-                QR Placeholder
-              </div>
+    <div className="text-sm text-gray-500">
+      Total Amount
+    </div>
 
-<Button onClick={() => completeOrder("upi")}>
-                Confirm Payment
-              </Button>
-            </div>
-          )}
+    <div className="text-2xl font-bold">
+      ₹{cartTotal}
+    </div>
+
+    {upiQr && (
+      <div className="flex justify-center">
+        <img
+          src={upiQr}
+          alt="UPI QR"
+          className="w-56 h-56 border rounded-xl shadow"
+        />
+      </div>
+    )}
+
+    <div className="text-sm text-gray-500">
+      Ask customer to scan and complete payment.
+      <br />
+      Confirm after verifying bank screenshot.
+    </div>
+
+    <Button
+      className="w-full bg-green-600 hover:bg-green-700 text-white"
+      onClick={() => completeOrder("upi")}
+    >
+      Confirm Payment
+    </Button>
+
+  </div>
+)}
 
           {paymentMode === "eftpos" && (
             <div className="space-y-3 text-center">

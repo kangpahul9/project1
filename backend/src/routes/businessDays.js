@@ -147,12 +147,6 @@ router.post("/start", authenticate, async (req, res) => {
 });
 
 
-
-
-
-/* ===============================
-   CLOSE BUSINESS DAY
-================================ */
 /* ===============================
    CLOSE BUSINESS DAY
 ================================ */
@@ -187,22 +181,55 @@ router.post("/close", authenticate, async (req, res) => {
        CHECK DRAWER (DENOMINATIONS)
     =============================== */
 
-    const denomResult = await client.query(
-      `
-      SELECT SUM(note_value * quantity) AS total
-      FROM denominations
-      WHERE business_day_id = $1
-      `,
-      [businessDay.id]
+    /* ===============================
+   STRICT DENOMINATION CHECK
+================================ */
+
+const systemDenomsRes = await client.query(
+  `
+  SELECT note_value, quantity
+  FROM denominations
+  WHERE business_day_id = $1
+  `,
+  [businessDay.id]
+);
+
+// Convert DB denominations into map
+const systemMap = {};
+systemDenomsRes.rows.forEach(row => {
+  systemMap[row.note_value] = Number(row.quantity);
+});
+
+// Convert submitted breakdown into map
+const countedMap = {};
+breakdown.forEach(d => {
+  countedMap[Number(d.note)] = Number(d.qty);
+});
+
+// Check exact match
+for (const note in systemMap) {
+  const systemQty = systemMap[note] || 0;
+  const countedQty = countedMap[note] || 0;
+
+  if (systemQty !== countedQty) {
+    throw new Error(
+      `Denomination mismatch for ₹${note}. System: ${systemQty}, Counted: ${countedQty}`
     );
+  }
+}
 
-    const systemCash = Number(denomResult.rows[0].total || 0);
+// Also verify no extra notes were submitted
+for (const note in countedMap) {
+  if (!(note in systemMap) && countedMap[note] > 0) {
+    throw new Error(`Unexpected denomination ₹${note} detected`);
+  }
+}
 
-    if (Math.abs(systemCash - total) > 0.01) {
-      throw new Error(
-        `Drawer mismatch. Drawer: ₹${systemCash}, Counted: ₹${total}`
-      );
-    }
+// Calculate total from DB for safety
+const systemCash = Object.entries(systemMap).reduce(
+  (sum, [note, qty]) => sum + Number(note) * qty,
+  0
+);
 
     /* ===============================
        CHECK LEDGER EXPECTED CASH

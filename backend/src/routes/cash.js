@@ -1,11 +1,11 @@
 import express from "express";
-import { authenticate } from "../middleware/authMiddleware.js";
+import { authenticate,requireAdmin } from "../middleware/authMiddleware.js";
 import db from "../config/db.js";
 
 const router = express.Router();
 
 // GET CURRENT DRAWER CASH
-router.get("/current", async (req, res) => {
+router.get("/current", authenticate, requireAdmin, async (req, res) => {
   try {
     const { businessDayId } = req.query;
 

@@ -7,7 +7,7 @@ const router = express.Router();
 /* ===============================
    GET ALL VENDORS
 ================================ */
-router.get("/", authenticate, async (req, res) => {
+router.get("/", authenticate,async (req, res) => {
   try {
     const result = await pool.query(
       "SELECT id, name, phone FROM vendors ORDER BY name ASC"
@@ -46,7 +46,7 @@ router.post("/", authenticate, requireAdmin, async (req, res) => {
 });
 
 
-router.get("/summary", authenticate, async (req, res) => {
+router.get("/summary", authenticate,requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
@@ -71,7 +71,7 @@ router.get("/summary", authenticate, async (req, res) => {
 /* ===============================
    GET UNPAID EXPENSES FOR VENDOR
 ================================ */
-router.get("/:id/unpaid", authenticate, async (req, res) => {
+router.get("/:id/unpaid", authenticate,requireAdmin, async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -311,7 +311,7 @@ const proportionalPaid = Math.round(
   }
 });
 
-router.get("/:id/settlements", authenticate, async (req, res) => {
+router.get("/:id/settlements", authenticate, requireAdmin,async (req, res) => {
   try {
     const { id } = req.params;
 

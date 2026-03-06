@@ -1,13 +1,13 @@
 import express from "express";
 import pool from "../config/db.js";
-import { authenticate } from "../middleware/authMiddleware.js";
+import { authenticate,requireAdmin } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
 /* =========================================
    DAILY REPORT
 ========================================= */
-router.get("/daily", authenticate, async (req, res) => {
+router.get("/daily", authenticate,requireAdmin, async (req, res) => {
   try {
     const { date } = req.query;
 
@@ -53,7 +53,7 @@ AND created_at < ($1::date + INTERVAL '1 day')  `,
   }
 });
 
-router.get("/weekly", authenticate, async (req, res) => {
+router.get("/weekly", authenticate,requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
@@ -72,7 +72,7 @@ ORDER BY DATE(created_at)
   }
 });
 
-router.get("/weekly-summary", authenticate, async (req, res) => {
+router.get("/weekly-summary", authenticate, requireAdmin,async (req, res) => {
   try {
     // Current week
     const currentWeek = await pool.query(`
@@ -130,7 +130,7 @@ router.get("/weekly-summary", authenticate, async (req, res) => {
 });
 
 
-router.get("/monthly", authenticate, async (req, res) => {
+router.get("/monthly", authenticate,requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
@@ -149,7 +149,7 @@ ORDER BY DATE(created_at)
   }
 });
 
-router.get("/monthly-summary", authenticate, async (req, res) => {
+router.get("/monthly-summary", authenticate,requireAdmin, async (req, res) => {
   try {
     // Current month (last 30 days)
     const currentMonth = await pool.query(`
@@ -205,7 +205,7 @@ router.get("/monthly-summary", authenticate, async (req, res) => {
   }
 });
 
-router.get("/export", authenticate, async (req, res) => {
+router.get("/export", authenticate,requireAdmin, async (req, res) => {
   try {
     const { type } = req.query; // daily | weekly | monthly
 

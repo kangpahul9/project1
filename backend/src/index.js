@@ -15,6 +15,10 @@ import vendorsRoutes from "./routes/vendors.js";
 import staffRoutes from "./routes/staff.js";
 import path from "path";
 import { fileURLToPath } from "url";
+import cron from "node-cron";
+import { generateMonthlySalary } from "./jobs/salaryGenerator.js";
+import { sendWhatsApp } from "./services/whatsappService.js";
+
 
 
 
@@ -69,6 +73,35 @@ app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 app.use("/staff", staffRoutes);
 
+// app.get("/dev/run-salary", async (req, res) => {
+//   try {
+//     await generateMonthlySalary();
+//     res.json({ message: "Salary generation executed" });
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ message: "Salary generator failed" });
+//   }
+// });
+
+app.get("/dev/test-whatsapp", async (req, res) => {
+  await sendWhatsApp("KangPOS backend WhatsApp test 🚀");
+  res.json({ message: "WhatsApp test sent" });
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+ cron.schedule(
+  "0 1 * * *",
+  async () => {
+    try {
+      console.log("Running monthly salary generator...");
+      await generateMonthlySalary();
+    } catch (err) {
+      console.error("Salary generator failed:", err);
+    }
+  },
+  {
+    timezone: "Asia/Kolkata",
+  }
+);
 });

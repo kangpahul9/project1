@@ -233,12 +233,15 @@ router.get("/:id/history", authenticate, async (req, res) => {
     const result = await pool.query(
       `
       SELECT
-        t.*,
-        t.payment_method,
-        t.created_at
-      FROM staff_transactions t
-      WHERE t.staff_id = $1
-      ORDER BY t.created_at ASC
+  t.*,
+  e.payment_method,
+  e.description,
+e.id as linked_expense_id
+FROM staff_transactions t
+LEFT JOIN expenses e
+ON t.expense_id = e.id
+WHERE t.staff_id = $1
+ORDER BY t.created_at ASC
       `,
       [id]
     );
@@ -328,6 +331,49 @@ router.post("/:id/transaction", authenticate, requireAdmin, async (req, res) => 
       [id, amount, type, reason || null, businessDayId || null, withdrawalId]
     );
 
+    if (type === "payment") {
+
+  const expenseRes = await client.query(
+  `
+  INSERT INTO expenses
+  (
+    business_day_id,
+    amount,
+    category,
+    description,
+    payment_method,
+    user_id,
+    staff_id,
+    is_paid,
+    source
+  )
+  VALUES ($1,$2,'salary',$3,$4,$5,$6,TRUE,'staff_payment')
+  RETURNING id
+  `,
+  [
+    businessDayId,
+    amount,
+    `Salary payment`,
+    payment_method,
+    req.user.id,
+    id
+  ]
+);
+
+await client.query(
+`
+UPDATE staff_transactions
+SET expense_id = $1
+WHERE id = $2
+`,
+[
+  expenseRes.rows[0].id,
+  result.rows[0].id
+]
+);
+
+}
+
     await client.query("COMMIT");
 
     res.status(201).json(result.rows[0]);
@@ -344,7 +390,7 @@ router.post("/:id/transaction", authenticate, requireAdmin, async (req, res) => 
    ADD STAFF (ADMIN)
 ================================ */
 router.post("/", authenticate, requireAdmin, async (req, res) => {
-const { name, role, phone, salary, opening_balance } = req.body;
+const { name, role, phone, salary, joining_date, opening_balance } = req.body;
   if (!name) {
     return res.status(400).json({ message: "Name required" });
   }
@@ -352,11 +398,11 @@ const { name, role, phone, salary, opening_balance } = req.body;
   try {
     const result = await pool.query(
   `
-  INSERT INTO staff (name, role, phone, salary)
-  VALUES ($1,$2,$3,$4)
+  INSERT INTO staff (name, role, phone, salary, joining_date)
+  VALUES ($1,$2,$3,$4,$5)
   RETURNING *
   `,
-  [name.trim(), role || null, phone || null, salary || 0]
+  [name.trim(), role || null, phone || null, salary || 0, joining_date || new Date()]
 );
 
 const staff = result.rows[0];
@@ -385,21 +431,21 @@ res.status(201).json(staff);
 ================================ */
 router.put("/:id", authenticate, requireAdmin, async (req, res) => {
   const { id } = req.params;
-  const { name, role, phone, salary, is_active } = req.body;
-
+const { name, role, phone, salary, joining_date, is_active } = req.body;
   try {
     const result = await pool.query(
       `
       UPDATE staff
-      SET name=$1,
-          role=$2,
-          phone=$3,
-          salary=$4,
-          is_active=$5
-      WHERE id=$6
-      RETURNING *
+SET name=$1,
+    role=$2,
+    phone=$3,
+    salary=$4,
+    joining_date=$5,
+    is_active=$6
+WHERE id=$7
+RETURNING *
       `,
-      [name, role, phone, salary, is_active, id]
+[name, role, phone, salary, joining_date, is_active, id]
     );
 
     res.json(result.rows[0]);

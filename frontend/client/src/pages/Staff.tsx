@@ -51,6 +51,7 @@ const [editForm, setEditForm] = useState({
   role: "",
   phone: "",
   salary: "",
+  joining_date: "",
 });
 
 
@@ -73,6 +74,7 @@ const [newStaff, setNewStaff] = useState({
   role: "",
   phone: "",
   salary: "",
+  joining_date: "",
   opening_balance: "",
 });
 const openTransactionModal = (member: StaffType) => {
@@ -90,6 +92,7 @@ const openEditModal = (member: StaffType) => {
     role: member.role || "",
     phone: member.phone || "",
     salary: String(member.salary),
+    joining_date: member.joining_date || "",
   });
   setEditOpen(true);
 };
@@ -246,6 +249,18 @@ const openEditModal = (member: StaffType) => {
       />
 
       <Input
+  type="date"
+  placeholder="Joining Date"
+  value={newStaff.joining_date}
+  onChange={(e) =>
+    setNewStaff({
+      ...newStaff,
+      joining_date: e.target.value,
+    })
+  }
+/>
+
+      <Input
   type="number"
   placeholder="Opening Balance (optional)"
   value={newStaff.opening_balance}
@@ -262,18 +277,28 @@ const openEditModal = (member: StaffType) => {
         onClick={() => {
           if (!newStaff.name.trim()) return;
 
-            createStaff(newStaff, {
-              onSuccess: () => {
-                setOpen(false);
-                setNewStaff({
-  name: "",
-  role: "",
-  phone: "",
-  salary: "",
-  opening_balance: "",
-});
-              },
-            });
+            createStaff(
+{
+  ...newStaff,
+  salary: Number(newStaff.salary),
+  opening_balance: newStaff.opening_balance
+    ? Number(newStaff.opening_balance)
+    : undefined,
+},
+{
+  onSuccess: () => {
+    setOpen(false);
+    setNewStaff({
+      name: "",
+      role: "",
+      phone: "",
+      salary: "",
+      joining_date: "",
+      opening_balance: "",
+    });
+  },
+}
+);
         }}
       >
         Save Staff
@@ -309,7 +334,7 @@ const openEditModal = (member: StaffType) => {
     className="w-full border rounded-md p-2"
   >
     <option value="cash">Cash</option>
-    <option value="card">Card</option>
+    {/* <option value="card">Card</option> */}
     <option value="online">Online</option>
   </select>
 
@@ -527,6 +552,16 @@ const openEditModal = (member: StaffType) => {
           setEditForm({ ...editForm, salary: e.target.value })
         }
       />
+      <Input
+  type="date"
+  value={editForm.joining_date}
+  onChange={(e) =>
+    setEditForm({
+      ...editForm,
+      joining_date: e.target.value,
+    })
+  }
+/>
 
       <Button
         className="w-full"
@@ -534,13 +569,14 @@ const openEditModal = (member: StaffType) => {
           if (!editStaff) return;
 
           updateStaff({
-            id: editStaff.id,
-            name: editForm.name,
-            role: editForm.role,
-            phone: editForm.phone,
-            salary: Number(editForm.salary),
-            is_active: true,
-          });
+  id: editStaff.id,
+  name: editForm.name,
+  role: editForm.role,
+  phone: editForm.phone,
+  salary: Number(editForm.salary),
+  joining_date: editForm.joining_date,
+  is_active: true,
+});
 
           setEditOpen(false);
         }}

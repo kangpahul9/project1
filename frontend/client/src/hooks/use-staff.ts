@@ -8,6 +8,7 @@ export interface Staff {
   role: string | null;
   phone: string | null;
   salary: number;
+  joining_date: string;
   is_active: boolean;
   balance: number;
 }
@@ -93,6 +94,7 @@ export function useUpdateStaff() {
       role?: string;
       phone?: string;
       salary?: number;
+      joining_date?: string;
       is_active?: boolean;
     }) => {
       const res = await fetch(`${API_BASE}/staff/${id}`, {

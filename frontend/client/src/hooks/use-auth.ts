@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useToast } from "@/hooks/use-toast";
+import { withApiBase } from "@/lib/api-base";
 
 
 
@@ -38,9 +39,7 @@ export function useLogin() {
 
   return useMutation({
     mutationFn: async (credentials: { pin: string }) => {
-      const API = import.meta.env.VITE_API_URL;
-console.log("API URL:", import.meta.env.VITE_API_URL);
-      const res = await fetch(`${API}/auth/login`, {
+      const res = await fetch(withApiBase("/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(credentials),

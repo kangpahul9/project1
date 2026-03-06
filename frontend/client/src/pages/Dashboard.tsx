@@ -39,6 +39,8 @@ import { DenominationSelector } from "@/components/DenominationSelector";
 
 
 export default function Dashboard() {
+  const { user } = useAuthStore();
+const isAdmin = user?.role === "ADMIN";
   const { data: currentDay, isLoading } = useCurrentBusinessDay();
   const { mutate: openDay, isPending: isOpening } = useOpenBusinessDay();
   const { mutate: closeDay, isPending: isClosing } = useCloseBusinessDay();
@@ -282,7 +284,11 @@ const hasMismatch = Math.abs(difference) > 0.01;
         {/* CONTENT */}
         {currentDay ? (
           <>
+    {isAdmin && (
+          <>
+          
             {/* STATS */}
+{isAdmin && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
               <StatCard
                 title="Today's Sales"
@@ -309,12 +315,13 @@ const hasMismatch = Math.abs(difference) > 0.01;
                 icon={TrendingUp}
               />
             </div>
-
+          )}
+</>)}
           
 {/* ACTION CARDS */}
 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-6">
 
-  <div
+  {isAdmin && ( <div 
     onClick={() => setWithdrawOpen(true)}
     className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
   >
@@ -330,8 +337,9 @@ const hasMismatch = Math.abs(difference) > 0.01;
       </div>
     </div>
   </div>
+  )}
 
-  <div
+  {isAdmin && (<div
     onClick={() => setDepositOpen(true)}
     className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
   >
@@ -347,8 +355,9 @@ const hasMismatch = Math.abs(difference) > 0.01;
       </div>
     </div>
   </div>
+  )}
 
-  <div
+  {isAdmin && (<div
     onClick={() => setCashDialog(true)}
     className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
   >
@@ -364,6 +373,7 @@ const hasMismatch = Math.abs(difference) > 0.01;
       </div>
     </div>
   </div>
+  )}
 
   <div
     onClick={() => setCloseDialogOpen(true)}
@@ -381,7 +391,7 @@ const hasMismatch = Math.abs(difference) > 0.01;
       </div>
     </div>
   </div>
-<div
+{isAdmin && (<div
   onClick={() => setWithdrawHistoryOpen(true)}
   className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
 >
@@ -397,8 +407,8 @@ const hasMismatch = Math.abs(difference) > 0.01;
     </div>
   </div>
 </div>
-
-<div
+)}
+{isAdmin && (<div
   onClick={() => setDepositHistoryOpen(true)}
   className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
 >
@@ -414,12 +424,14 @@ const hasMismatch = Math.abs(difference) > 0.01;
     </div>
   </div>
 </div>
+)}
+
 </div>
 
 
             {/* ACTIONS */}
             <div className="mt-10"></div>
-            <Link href="/unpaid">
+            {isAdmin && (<Link href="/unpaid">
   <div className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border">
     <div className="flex items-center gap-4">
       <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center">
@@ -433,11 +445,13 @@ const hasMismatch = Math.abs(difference) > 0.01;
       </div>
     </div>
   </div>
+  
 </Link>
+  )}
 
             
           </>
-        ) : (
+           ) : (
   <div className="bg-white rounded-xl p-12 text-center border shadow-sm">
     <h3 className="text-lg font-semibold text-gray-900">
       Business Closed

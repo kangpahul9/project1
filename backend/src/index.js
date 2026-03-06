@@ -17,7 +17,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import cron from "node-cron";
 import { generateMonthlySalary } from "./jobs/salaryGenerator.js";
-import { sendWhatsApp } from "./services/whatsappService.js";
+import { sendWhatsAppTemplate } from "./services/whatsappService.js";
 
 
 
@@ -84,7 +84,7 @@ app.use("/staff", staffRoutes);
 // });
 
 app.get("/dev/test-whatsapp", async (req, res) => {
-  await sendWhatsApp("KangPOS backend WhatsApp test 🚀");
+  await sendWhatsAppTemplate("kangpos_test", ["KangPOS backend WhatsApp test 🚀"]);
   res.json({ message: "WhatsApp test sent" });
 });
 

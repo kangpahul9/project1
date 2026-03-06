@@ -22,13 +22,23 @@ import Roster from "@/pages/Roster";
 
 
 // Protected Route Wrapper
-function ProtectedRoute({ component: Component }: { component: React.ComponentType<any> }) {
+function ProtectedRoute({
+  component: Component,
+  roles
+}: {
+  component: React.ComponentType<any>;
+  roles?: string[];
+}) {
   const { user } = useAuthStore();
-  
+
   if (!user) {
     return <Redirect to="/login" />;
   }
-  
+
+  if (roles && !roles.includes(user.role)) {
+    return <Redirect to="/pos" />;
+  }
+
   return <Component />;
 }
 
@@ -38,7 +48,16 @@ function Router() {
       <Route path="/login" component={Login} />
       
       {/* Protected Routes */}
-      <Route path="/" component={() => <Redirect to="/dashboard" />} />
+<Route path="/">
+  {() => {
+    const { user } = useAuthStore();
+    if (!user) return <Redirect to="/login" />;
+
+    return user.role === "STAFF"
+      ? <Redirect to="/dashboard" />
+      : <Redirect to="/dashboard" />;
+  }}
+</Route>
       <Route path="/dashboard">
         <ProtectedRoute component={Dashboard} />
       </Route>
@@ -52,22 +71,22 @@ function Router() {
         <ProtectedRoute component={Expenses} />
       </Route>
       <Route path="/vendors">
-        <ProtectedRoute component={Vendors} />
+        <ProtectedRoute component={Vendors}  roles={["ADMIN"]} />
       </Route>
       <Route path="/staff">
-        <ProtectedRoute component={Staff} />
+        <ProtectedRoute component={Staff}  roles={["ADMIN"]} />
       </Route>
       <Route path="/unpaid">
-        <ProtectedRoute component={UnpaidOrders} />
+        <ProtectedRoute component={UnpaidOrders}  roles={["ADMIN"]} />
       </Route>
       <Route path="/reports">
-        <ProtectedRoute component={Reports} />
+        <ProtectedRoute component={Reports}  roles={["ADMIN"]} />
       </Route>
       <Route path="/print/:billNumber">
-        <ProtectedRoute component={PrintBill} />
+        <ProtectedRoute component={PrintBill}  roles={["ADMIN"]} />
       </Route>
       <Route path="/withdrawals-history">
-        <ProtectedRoute component={WithdrawalHistory} />
+        <ProtectedRoute component={WithdrawalHistory}  roles={["ADMIN"]} />
       </Route>
       <Route path="/roster">
         <ProtectedRoute component={Roster} />

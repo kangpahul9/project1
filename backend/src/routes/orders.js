@@ -93,9 +93,6 @@ async function returnChange(client, businessDayId, changeRequired) {
 /* =========================================
    CREATE ORDER
 ========================================= */
-/* =========================================
-   CREATE ORDER
-========================================= */
 router.post("/", authenticate, async (req, res) => {
   const client = await pool.connect();
 
@@ -344,17 +341,35 @@ router.get("/unpaid", authenticate, async (req, res) => {
 
 
 /* =========================================
-   GET ORDERS BY BUSINESS DAY
+   GET ORDERS 
 ========================================= */
 router.get("/", authenticate, async (req, res) => {
   try {
-    const result = await pool.query(
-      `
-      SELECT *
-      FROM orders
-      ORDER BY created_at DESC
-      `
-    );
+
+    let result;
+
+    if (req.user.role === "STAFF") {
+
+      result = await pool.query(
+        `
+        SELECT *
+        FROM orders
+        ORDER BY created_at DESC
+        LIMIT 10
+        `
+      );
+
+    } else {
+
+      result = await pool.query(
+        `
+        SELECT *
+        FROM orders
+        ORDER BY created_at DESC
+        `
+      );
+
+    }
 
     res.json(result.rows);
 

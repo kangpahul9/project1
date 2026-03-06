@@ -259,7 +259,6 @@ CREATE TABLE IF NOT EXISTS staff_roster (
 COMMIT;
 
 
----> new
 ALTER TABLE expenses
 ADD COLUMN staff_id INTEGER;
 
@@ -286,3 +285,7 @@ ALTER COLUMN joining_date SET DEFAULT CURRENT_DATE;
 
 ALTER TABLE staff
 ADD COLUMN salary_cycle TEXT DEFAULT 'monthly';
+
+---> new
+ALTER TABLE staff_transactions
+ADD COLUMN salary_month DATE;

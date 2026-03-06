@@ -1,6 +1,6 @@
 import express from "express";
 import pool from "../config/db.js";
-import { authenticate } from "../middleware/authMiddleware.js";
+import { authenticate,requireAdmin } from "../middleware/authMiddleware.js";
 import upload from "../middleware/upload.js";
 
 
@@ -214,7 +214,7 @@ VALUES ($1,$2,'payment','Salary Payment',$3,$4)
 /* =========================================
    GET ALL EXPENSES
 ========================================= */
-router.get("/", authenticate, async (req, res) => {
+router.get("/", authenticate, requireAdmin,async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
@@ -241,7 +241,7 @@ ORDER BY e.created_at DESC
 /* =========================================
    UPDATE EXPENSE
 ========================================= */
-router.put("/:id", authenticate, async (req, res) => {
+router.put("/:id", authenticate, requireAdmin,async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -343,7 +343,7 @@ router.put("/:id", authenticate, async (req, res) => {
 /* =========================================
    DELETE EXPENSE
 ========================================= */
-router.delete("/:id", authenticate, async (req, res) => {
+router.delete("/:id", authenticate,requireAdmin, async (req, res) => {
   
   try {
     const { id } = req.params;
@@ -373,7 +373,7 @@ res.json({ message: "Expense deleted" });
 
 router.post(
   "/upload",
-  authenticate,
+  authenticate,requireAdmin,
   upload.single("file"),
   async (req, res) => {
     if (!req.file) {

@@ -9,7 +9,7 @@ router.get("/", authenticate, async (req, res) => {
   res.json(menu);
 });
 
-router.post("/", authenticate, requireAdmin, async (req, res) => {
+router.post("/", authenticate, async (req, res) => {
   const { name, price } = req.body;
 
   if (!name || !price) {

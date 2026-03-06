@@ -22,7 +22,7 @@ router.get("/", authenticate, async (req, res) => {
   }
 });
 
-router.get("/with-balance", authenticate, async (req, res) => {
+router.get("/with-balance", authenticate, requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
@@ -51,7 +51,7 @@ router.get("/with-balance", authenticate, async (req, res) => {
 /* ===============================
    STAFF SUMMARY
 ================================ */
-router.get("/summary", authenticate, async (req, res) => {
+router.get("/summary", authenticate,requireAdmin,async (req, res) => {
   try {
     // 1️⃣ Total Salary (static monthly obligation)
     const totalSalaryRes = await pool.query(`
@@ -115,7 +115,7 @@ router.get("/summary", authenticate, async (req, res) => {
 /* ===============================
    GET ROSTER RANGE
 ================================ */
-router.get("/roster", authenticate, async (req, res) => {
+router.get("/roster", authenticate,async (req, res) => {
   const { start, end } = req.query;
 
   if (!start || !end) {
@@ -142,7 +142,7 @@ router.get("/roster", authenticate, async (req, res) => {
 });
 
 //add shift to roster
-router.post("/roster", authenticate, async (req, res) => {
+router.post("/roster", authenticate,requireAdmin, async (req, res) => {
   const { staff_id, date, shift_start, shift_end } = req.body;
 
   if (!staff_id || !date || !shift_start || !shift_end) {
@@ -186,7 +186,7 @@ router.post("/roster", authenticate, async (req, res) => {
 });
 
 //update shift
-router.put("/roster/:id", authenticate, async (req, res) => {
+router.put("/roster/:id", authenticate,requireAdmin,async (req, res) => {
   const { id } = req.params;
   const { shift_start, shift_end } = req.body;
 
@@ -209,7 +209,7 @@ router.put("/roster/:id", authenticate, async (req, res) => {
 });
 
 //delete shift
-router.delete("/roster/:id", authenticate, async (req, res) => {
+router.delete("/roster/:id", authenticate, requireAdmin,async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -226,7 +226,7 @@ router.delete("/roster/:id", authenticate, async (req, res) => {
 /* ===============================
    STAFF HISTORY
 ================================ */
-router.get("/:id/history", authenticate, async (req, res) => {
+router.get("/:id/history", authenticate,requireAdmin, async (req, res) => {
   const { id } = req.params;
 
   try {

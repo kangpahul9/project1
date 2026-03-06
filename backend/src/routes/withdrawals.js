@@ -1,6 +1,6 @@
 import express from "express";
 import pool from "../config/db.js";
-import { authenticate } from "../middleware/authMiddleware.js";
+import { authenticate,requireAdmin } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
@@ -31,7 +31,7 @@ const EXPENSE_REASONS = [
 /* =========================================
    OWNER CASH WITHDRAWAL
 ========================================= */
-router.post("/", authenticate, async (req, res) => {
+router.post("/", authenticate, requireAdmin, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -189,7 +189,7 @@ await client.query(
 /* =========================================
    WITHDRAWAL HISTORY (GLOBAL + FILTERABLE)
 ========================================= */
-router.get("/history", authenticate, async (req, res) => {
+router.get("/history", authenticate,requireAdmin, async (req, res) => {
   try {
     const { from, to } = req.query;
 
@@ -234,7 +234,7 @@ router.get("/history", authenticate, async (req, res) => {
 });
 
 
-router.post("/deposit", authenticate, async (req, res) => {
+router.post("/deposit", authenticate, requireAdmin, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -309,7 +309,7 @@ await client.query(
   }
 });
 
-router.get("/deposits-history", authenticate, async (req, res) => {
+router.get("/deposits-history", authenticate,requireAdmin,async (req, res) => {
   try {
     const { from, to } = req.query;
 

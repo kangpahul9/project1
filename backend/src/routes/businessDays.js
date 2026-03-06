@@ -2,6 +2,7 @@ import express from "express";
 import pool from "../config/db.js";
 import { authenticate, requireAdmin } from "../middleware/authMiddleware.js";
 import { sendDiscrepancyEmail } from "../utils/email.js";
+import { sendWhatsAppTemplate } from "../services/whatsappService.js";
 
 const router = express.Router();
 
@@ -106,6 +107,7 @@ router.post("/start", authenticate, async (req, res) => {
       [openingCash]
     );
 
+
     const businessDay = dayResult.rows[0];
 
     // 4️⃣ Insert denominations
@@ -133,7 +135,25 @@ router.post("/start", authenticate, async (req, res) => {
       [businessDay.id, openingCash]
     );
 
+    const userRes = await client.query(
+  "SELECT name FROM users WHERE id = $1",
+  [req.user.id]
+);
     await client.query("COMMIT");
+
+    
+
+const staffName = userRes.rows[0]?.name || "Unknown";
+    // await 
+    sendWhatsAppTemplate(
+  "kangpos_day_opened",
+  [
+    new Date().toLocaleDateString(),
+    staffName,
+    new Date().toLocaleTimeString(),
+    openingCash
+  ]
+).catch(err => console.error("WhatsApp failed:", err));
 
     res.status(201).json(businessDay);
 
@@ -312,7 +332,65 @@ const systemCash = Object.entries(systemMap).reduce(
       ]
     );
 
+    const userRes = await client.query(
+  "SELECT name FROM users WHERE id = $1",
+  [req.user.id]
+);
     await client.query("COMMIT");
+// CASH SALES
+const cashSalesRes = await pool.query(
+  `
+  SELECT COALESCE(SUM(amount),0) AS total
+  FROM cash_ledger
+  WHERE business_day_id = $1
+  AND type = 'sale'
+  `,
+  [businessDay.id]
+);
+
+const cashSales = Number(cashSalesRes.rows[0].total);
+
+// UPI SALES
+const upiSalesRes = await pool.query(
+  `
+  SELECT COALESCE(SUM(total),0) AS total
+  FROM orders
+  WHERE business_day_id = $1
+  AND payment_method = 'online'
+  `,
+  [businessDay.id]
+);
+
+const upiSales = Number(upiSalesRes.rows[0].total);
+
+// EXPENSES
+const expensesRes = await pool.query(
+  `
+  SELECT COALESCE(SUM(amount),0) AS total
+  FROM expenses
+  WHERE business_day_id = $1
+  `,
+  [businessDay.id]
+);
+
+const expenses = Number(expensesRes.rows[0].total);
+
+const closingCash = total;
+
+const staffName = userRes.rows[0]?.name || "Unknown";
+  //  await 
+   sendWhatsAppTemplate(
+  "kangpos_day_closed",
+  [
+    new Date().toLocaleDateString(),
+    staffName,
+    cashSales,
+    upiSales,
+    expenses,
+    closingCash
+  ]
+).catch(err => console.error("WhatsApp failed:", err));
+
 
     /* ===============================
        SEND EMAIL AFTER COMMIT

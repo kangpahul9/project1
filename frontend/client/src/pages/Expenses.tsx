@@ -7,7 +7,7 @@ import {
   useUpdateExpense
 } from "@/hooks/use-expenses";
 import {DenominationSelector} from "@/components/DenominationSelector";
-// import { useStaff } from "@/hooks/use-staff";
+import { useStaff } from "@/hooks/use-staff";
 import { useCurrentBusinessDay } from "@/hooks/use-business-days";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +39,7 @@ import { Plus, Wallet, Eye,Download,Pencil, Trash2 } from "lucide-react";
 import { useState,useEffect } from "react";
 import { format } from "date-fns";
 import { useVendorSummary } from "@/hooks/use-vendors";
+import { withApiBase } from "@/lib/api-base";
 
 export default function Expenses() {
   const { data: expenses, isLoading } = useExpenses();
@@ -50,7 +51,7 @@ export default function Expenses() {
   const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const { data: vendors } = useVendorSummary();
-  // const { data: staff } = useStaff();
+  const { data: staff } = useStaff();
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -58,17 +59,17 @@ export default function Expenses() {
 const { mutate: updateExpense } = useUpdateExpense();
 
 const [editingExpense, setEditingExpense] = useState<any>(null);
-
   const form = useForm({
     defaultValues: {
-      description: "",
-      amount: 0,
-      category: "supplies",
-      paymentMode: "online",
-      vendorId: "",
-      utilityType: "",
-      isPaid: false,
-    },
+  description: "",
+  amount: 0,
+  category: "supplies",
+  paymentMode: "online",
+  vendorId: "",
+  utilityType: "",
+  isPaid: false,
+  staff_id: "",
+},
   });
 
   const [deductFromGalla, setDeductFromGalla] = useState(false);
@@ -117,10 +118,12 @@ useEffect(() => {
 const payload = {
   ...data,
   vendorId: data.vendorId ? Number(data.vendorId) : null,
+staff_id: data.staff_id ? Number(data.staff_id) : null,
   is_paid: data.isPaid,
   businessDayId: currentDay.id,
   document_url: uploadedUrl,
   deduct_from_galla: deductFromGalla,
+  source: "manual",
   ...(data.paymentMode === "cash" && deductFromGalla && {
     denominations: denominationObject
   })
@@ -151,14 +154,15 @@ const handleEdit = (expense: any) => {
   setOpen(true);
 
   form.reset({
-    description: expense.description,
-    amount: Number(expense.amount),
-    category: expense.category,
-    paymentMode: expense.payment_method,
-    vendorId: expense.vendor_id?.toString() || "",
-    utilityType: expense.utility_type || "",
-    isPaid: expense.is_paid || false,
-  });
+  description: expense.description,
+  amount: Number(expense.amount),
+  category: expense.category,
+  paymentMode: expense.payment_method,
+  vendorId: expense.vendor_id?.toString() || "",
+staff_id: expense.staff_id?.toString() || "",
+  utilityType: expense.utility_type || "",
+  isPaid: expense.is_paid || false,
+});
 
   setUploadedUrl(expense.document_url || null);
 };
@@ -292,10 +296,10 @@ const handleEdit = (expense: any) => {
                         )}
                       />
                     )}
-                    {/* {selectedCategory === "salary" && (
+                    {selectedCategory === "salary" && (
   <FormField
     control={form.control}
-    name="staffId"
+    name="staff_id"
     render={({ field }) => (
       <FormItem>
         <FormLabel>Staff</FormLabel>
@@ -319,7 +323,7 @@ const handleEdit = (expense: any) => {
       </FormItem>
     )}
   />
-)} */}
+)}
 
                     {selectedCategory === "utility" && (
   <FormField
@@ -447,7 +451,7 @@ const handleEdit = (expense: any) => {
 
                       {uploadedUrl && (
                         <img
-                          src={`${import.meta.env.VITE_API_URL}${uploadedUrl}`}
+                          src={withApiBase(uploadedUrl)}
                           className="mt-3 w-24 h-24 object-cover rounded border"
                         />
                       )}
@@ -522,7 +526,8 @@ const handleEdit = (expense: any) => {
 
   return (
     e.description?.toLowerCase().includes(term) ||
-    e.vendor_name?.toLowerCase().includes(term)
+    e.vendor_name?.toLowerCase().includes(term) ||
+e.staff_name?.toLowerCase().includes(term)
   );
 })
   .map((expense: any) => (
@@ -537,6 +542,10 @@ const handleEdit = (expense: any) => {
       <h3 className="font-semibold text-m ">{expense.description} {expense.category === "supplies" && expense.vendor_name && (
   <span className="inline-block mt-1 px-2 py-0.5 text-s bg-blue-50 text-blue-700 rounded-full"> 
     {expense.vendor_name}
+  </span>
+)} {expense.category === "salary" && expense.staff_name && (
+  <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-green-50 text-green-700 rounded-full">
+    {expense.staff_name}
   </span>
 )}</h3>
       
@@ -565,7 +574,7 @@ const handleEdit = (expense: any) => {
           type="button"
           onClick={() =>
             setPreviewUrl(
-              `${import.meta.env.VITE_API_URL}${expense.document_url}`
+              withApiBase(expense.document_url)
             )
           }
           className="p-2 rounded hover:bg-gray-100"
@@ -574,7 +583,7 @@ const handleEdit = (expense: any) => {
         </button>
 
         <a
-          href={`${import.meta.env.VITE_API_URL}${expense.document_url}`}
+          href={withApiBase(expense.document_url)}
           download
           className="p-2 rounded hover:bg-gray-100"
         >

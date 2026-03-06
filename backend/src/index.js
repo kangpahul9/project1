@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import pool from "./config/db.js";
@@ -13,11 +14,14 @@ import expensesRoutes from "./routes/expenses.js";
 import vendorsRoutes from "./routes/vendors.js";
 import staffRoutes from "./routes/staff.js";
 import path from "path";
+import { fileURLToPath } from "url";
 
 
 
 
 const app = express();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 app.use(
   cors({
@@ -61,7 +65,7 @@ app.use("/expenses", expensesRoutes);
 
 app.use("/vendors", vendorsRoutes);
 
-app.use("/uploads", express.static("uploads"));
+app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 app.use("/staff", staffRoutes);
 

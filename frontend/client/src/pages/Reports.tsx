@@ -3,6 +3,7 @@ import { useCurrentBusinessDay } from "@/hooks/use-business-days";
 import { useDailyReport,useWeeklyReport,useWeeklySummary,useMonthlyReport,useMonthlySummary } from "@/hooks/use-reports";
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
+import { withApiBase } from "@/lib/api-base";
 import {
   PieChart,
   Pie,
@@ -74,7 +75,7 @@ const handleExport = async () => {
   const token = localStorage.getItem("token");
 
   const res = await fetch(
-    `${import.meta.env.VITE_API_URL}/reports/export?type=${reportType}`,
+    withApiBase(`/reports/export?type=${reportType}`),
     {
       headers: {
         Authorization: `Bearer ${token}`

@@ -42,7 +42,11 @@ export function useCreateExpense() {
       return await res.json();
     },
     onSuccess: () => {
+
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-balance"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-history"] });
+  queryClient.invalidateQueries({ queryKey: ["staff-summary"] });
       toast({
         title: "Success",
         description: "Expense recorded successfully",

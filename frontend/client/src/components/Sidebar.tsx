@@ -17,14 +17,21 @@ import { cn } from "@/lib/utils";
 import { useState } from "react";
 
 const NAV_ITEMS = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "POS", href: "/pos", icon: Store },
-  { label: "Orders", href: "/orders", icon: Receipt },
-  { label: "Reports", href: "/reports", icon: BarChart3 },
-  { label: "Expenses", href: "/expenses", icon: Wallet },
-  { label: "Vendors", href: "/vendors", icon: ShoppingBag },
-  { label: "Staff", href: "/staff", icon: Users },
-  { label: "Roster", href: "/roster", icon: CalendarDays },
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["ADMIN","STAFF"] },
+
+  { label: "POS", href: "/pos", icon: Store, roles: ["ADMIN", "STAFF"] },
+
+  { label: "Orders", href: "/orders", icon: Receipt, roles: ["ADMIN", "STAFF"] },
+
+  { label: "Reports", href: "/reports", icon: BarChart3, roles: ["ADMIN"] },
+
+  { label: "Expenses", href: "/expenses", icon: Wallet, roles: ["ADMIN", "STAFF"] },
+
+  { label: "Vendors", href: "/vendors", icon: ShoppingBag, roles: ["ADMIN"] },
+
+  { label: "Staff", href: "/staff", icon: Users, roles: ["ADMIN"] },
+
+  { label: "Roster", href: "/roster", icon: CalendarDays, roles: ["ADMIN", "STAFF"] },
 ];
 
 export function Sidebar() {
@@ -43,7 +50,9 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 px-4 space-y-2">
-        {NAV_ITEMS.map((item) => {
+        {NAV_ITEMS
+  .filter(item => item.roles.includes(user?.role))
+  .map((item) => {
           const isActive = location === item.href;
           return (
             <Link key={item.href} href={item.href}>

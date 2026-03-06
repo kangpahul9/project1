@@ -1,5 +1,5 @@
 import { Sidebar } from "@/components/Sidebar";
-import { useOrders, useOrderDetails } from "@/hooks/use-orders";
+import { useOrders, useOrderDetails,useOrderByBillNumber } from "@/hooks/use-orders";
 import { Loader2,Printer } from "lucide-react";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
@@ -13,9 +13,14 @@ export default function Orders() {
   const [dateFilter, setDateFilter] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
 
+  const billSearch =
+  search.toUpperCase().startsWith("BD-") ? search : undefined;
+  const { data: searchedBill } = useOrderByBillNumber(billSearch);
   const { data: selectedOrder } = useOrderDetails(selectedOrderId);
 
-const filteredOrders =
+
+
+let filteredOrders =
   data?.filter((order: any) => {
     const query = search.toLowerCase();
 
@@ -25,13 +30,16 @@ const filteredOrders =
       order.bill_number?.toLowerCase().includes(query);
 
     const matchesDate = dateFilter
-      ? new Date(order.created_at)
-          .toISOString()
-          .split("T")[0] === dateFilter
+      ? new Date(order.created_at).toISOString().split("T")[0] === dateFilter
       : true;
 
     return (query ? matchesSearch : true) && matchesDate;
   }) || [];
+
+// If searching bill number and API returned result
+if (searchedBill && !filteredOrders.find((o: any) => o.id === searchedBill.id)) {
+  filteredOrders = [searchedBill, ...filteredOrders];
+}
 
   return (
     <div className="flex bg-gray-50 min-h-screen">

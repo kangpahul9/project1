@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
-import { useMenu } from "@/hooks/use-menu";
+import { useMenu,useMenuCategories,useCreateMenuItem,useDeleteMenuItem,useUpdateMenuItem,useCreateCategory,useDeleteCategory,useUpdateCategory } from "@/hooks/use-menu";
 import { useCreateOrder } from "@/hooks/use-orders";
 import { useCurrentBusinessDay } from "@/hooks/use-business-days";
 import { useAuthStore } from "@/hooks/use-auth";
@@ -38,6 +38,12 @@ const [upiQr, setUpiQr] = useState<string | null>(null);
 
 
   const { data: menuItems, isLoading } = useMenu();
+  // const popularItems =
+  // menuItems
+  //   ?.slice()
+  //   .sort((a: any, b: any) => (b.usage_count || 0) - (a.usage_count || 0))
+  //   .slice(0, 8) || [];
+  const { data: categories } = useMenuCategories();
   const { data: currentDay } = useCurrentBusinessDay();
   const { user } = useAuthStore();
   const { mutate: createOrder, isPending } = useCreateOrder();
@@ -49,9 +55,29 @@ const [upiQr, setUpiQr] = useState<string | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [paymentDialog, setPaymentDialog] = useState(false);
   const [latestBill, setLatestBill] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<number | "all">("all");
+  const { mutate: createMenuItem } = useCreateMenuItem();
+const { mutate: deleteMenuItem } = useDeleteMenuItem();
+const { mutate: updateMenuItem } = useUpdateMenuItem();
+
+const { mutate: createCategory } = useCreateCategory();
+const { mutate: deleteCategory } = useDeleteCategory();
+const { mutate: updateCategory } = useUpdateCategory();
+
+
+const [categoryDialogOpen,setCategoryDialogOpen] = useState(false)
+const [editingCategory,setEditingCategory] = useState<any|null>(null)
+
+const [menuItemDialogOpen,setMenuItemDialogOpen] = useState(false)
+const [editingMenuItem,setEditingMenuItem] = useState<any|null>(null)
+
+const [formName,setFormName] = useState("")
+const [formPrice,setFormPrice] = useState(0)
+const [formCategory,setFormCategory] = useState<number|null>(null)
+const [formColor,setFormColor] = useState("#6366f1")
 
 const [paymentMode, setPaymentMode] =
-  useState<"cash" | "upi" | "eftpos" | "unpaid" | null>(null);  const [customerName, setCustomerName] = useState("");
+  useState<"cash" | "upi" | "eftpos" | "unpaid"  | "mixed" | null>(null);  const [customerName, setCustomerName] = useState("");
 const DENOMS = [500,200,100,50,20,10,5,2,1];
 const NOTE_COLORS: Record<number, string> = {
   500: "bg-amber-400",
@@ -81,6 +107,7 @@ const [awaitingChangeConfirm, setAwaitingChangeConfirm] = useState(false);
 
 const [printDialogOpen, setPrintDialogOpen] = useState(false);
 const [printBillNumber, setPrintBillNumber] = useState<string | null>(null);
+const [menuAdminOpen,setMenuAdminOpen] = useState(false);
 
 
   const subtotal = cart.reduce(
@@ -147,18 +174,22 @@ const adjustNote = (note:number, delta:number) => {
     )
   );
 };
+
+
+const totalReceived = cashBreakdown.reduce(
+  (sum, n) => sum + n.note * n.qty,
+  0
+);
+
 useEffect(() => {
   if (paymentMode === "upi") {
     QRCode.toDataURL(generateUpiLink())
       .then(setUpiQr)
       .catch(() => setUpiQr(null));
   }
-}, [paymentMode, cartTotal]);
+}, [paymentMode, cartTotal, totalReceived]);
 
-const totalReceived = cashBreakdown.reduce(
-  (sum, n) => sum + n.note * n.qty,
-  0
-);
+const remainingAmount = Math.max(0, cartTotal - totalReceived);
 
   const updateQuantity = (id: number, delta: number) => {
     setCart(prev =>
@@ -182,7 +213,9 @@ const totalReceived = cashBreakdown.reduce(
   const generateUpiLink = () => {
     const upiId = "q16958818@ybl"; // change later
     const name = "My Restaurant";
-    const amount = cartTotal.toFixed(2);
+    const amount = totalReceived > 0
+      ? remainingAmount.toFixed(2)
+      : cartTotal.toFixed(2);
     const note = "POS Payment";
 
     return `upi://pay?pa=${upiId}&pn=${encodeURIComponent(
@@ -194,7 +227,7 @@ const totalReceived = cashBreakdown.reduce(
      COMPLETE ORDER
   =============================== */
  const completeOrder = (
-  method: "cash" | "upi" | "eftpos" | "unpaid"
+  method: "cash" | "upi" | "eftpos" | "unpaid" | "mixed"
 ) => {
   if (!currentDay || !user) return;
 
@@ -229,8 +262,10 @@ const totalReceived = cashBreakdown.reduce(
     ? "online"
     : method === "eftpos"
     ? "card"
+    : method === "mixed"
+    ? "mixed"
     : method,
-    cashBreakdown: method === "cash" ? cashBreakdown : undefined,
+    cashBreakdown: method === "cash" || method === "mixed" ? cashBreakdown : undefined,
   },
       {
         onSuccess: (data: any) => {
@@ -313,12 +348,17 @@ setLatestBill(data.bill_number);
       customerName,
       customerPhone,
 paymentMethod:
-  method === "upi"
+  totalReceived > 0 && method === "eftpos"
+    ? "mixed-card"
+    : totalReceived > 0 && method === "upi"
+    ? "mixed-online"
+    : method === "upi"
     ? "online"
     : method === "eftpos"
     ? "card"
-    : method,      cashBreakdown:
-  method === "cash" || (method === "unpaid" && totalReceived > 0)
+    : method,
+ cashBreakdown:
+  totalReceived > 0
     ? cashBreakdown
     : null,
       discount,
@@ -437,42 +477,161 @@ if (isUnpaidPayment && unpaidLoading) {
 <div className="flex flex-col lg:flex-row bg-gray-50 min-h-screen">
       <Sidebar />
 
-<main className="flex-1 lg:ml-64 p-4 sm:p-6">
-        <div className="mb-4">
-          <Input
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-          />
+<main className="flex-1 lg:ml-64 p-4 sm:p-6 flex flex-col">
+       <div className="flex items-center gap-3 mb-4">
+
+  <div className="relative flex-1">
+    <Search className="absolute left-3 top-3 text-gray-400" size={18} />
+
+    <Input
+      placeholder="Search menu..."
+      value={searchQuery}
+      onChange={(e) => setSearchQuery(e.target.value)}
+      className="pl-10 h-11 rounded-xl"
+    />
+  </div>
+
+  {user?.role === "ADMIN" && (
+    <Button
+      className="h-11 rounded-xl bg-purple-600 hover:bg-purple-700 text-white px-4"
+      onClick={() => setMenuAdminOpen(true)}
+    >
+      Manage Menu
+    </Button>
+  )}
+
+</div>
+
+        {/* CATEGORY TABS */}
+<div className="flex gap-2 overflow-x-auto mb-6 pb-2">
+  <Button
+className={`rounded-full px-5 py-2 text-sm ${
+  selectedCategory === "all"
+    ? "bg-purple-600 text-white"
+    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+}`}
+onClick={() => setSelectedCategory("all")}
+>
+All
+</Button>
+
+{categories?.map((cat: any) => (
+
+<Button
+key={cat.id}
+className="rounded-full px-5 py-2 text-sm transition-all hover:scale-105"
+style={{
+background:
+selectedCategory === cat.id
+  ? cat.color
+  : "#f3f4f6",
+color:
+selectedCategory === cat.id
+  ? "white"
+  : "#374151"
+}}
+onClick={() => setSelectedCategory(cat.id)}
+>
+{cat.name}
+</Button>
+
+))}
+
+</div>
+
+<ScrollArea className="flex-1">
+  {/* 🔥 Popular Items
+
+{popularItems.length > 0 && (
+  <div className="mb-6">
+
+    <h3 className="text-sm font-semibold text-purple-600 mb-3">
+      🔥 Popular
+    </h3>
+
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+
+      {popularItems.map((item: any) => (
+
+        <div
+          key={`popular-${item.id}`}
+          onClick={() => addToCart(item)}
+          className="rounded-xl bg-purple-100 hover:bg-purple-200 transition cursor-pointer p-3"
+        >
+
+          <p className="text-sm font-medium text-gray-800">
+            {item.name}
+          </p>
+
+          <p className="text-xs text-purple-700 font-semibold">
+            ₹{item.price}
+          </p>
+
         </div>
 
-        <ScrollArea className="h-[70vh]">
+      ))}
+
+    </div>
+
+  </div>
+)} */}
 <div className="grid 
   grid-cols-2 
   sm:grid-cols-3 
   md:grid-cols-4 
   lg:grid-cols-5 
-  gap-4"
+  gap-4 pb-10"
 >
             {isLoading ? (
               <Loader2 className="animate-spin" />
             ) : (
                 menuItems
-  ?.filter(item =>
-    item.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-  .sort((a, b) =>
-  a.name.toLowerCase().localeCompare(b.name.toLowerCase())
-  )
-  .map(item => (
+?.filter((item:any) => {
+
+const searchMatch =
+item.name.toLowerCase().includes(searchQuery.toLowerCase());
+
+const categoryMatch =
+selectedCategory === "all" ||
+item.category_id === selectedCategory;
+
+return searchMatch && categoryMatch;
+
+})
+.sort((a:any,b:any)=>(b.usage_count || 0) - (a.usage_count || 0))
+.map((item:any) => (
                   <div
-                    key={item.id}
-                    onClick={() => addToCart(item)}
-                    className="bg-white p-4 rounded shadow cursor-pointer"
-                  >
-                    <h3>{item.name}</h3>
-                    <p>₹{item.price}</p>
-                  </div>
+  key={item.id}
+  onClick={() => addToCart(item)}
+  role="button"
+  className="rounded-2xl overflow-hidden shadow-sm hover:shadow-md active:scale-95 transition cursor-pointer bg-white"
+>
+
+  <div
+    className="h-24"
+    style={{
+      background: `linear-gradient(135deg, ${
+        categories?.find((c:any)=>c.id===item.category_id)?.color || "#e5e7eb"
+      }, ${
+        categories?.find((c:any)=>c.id===item.category_id)?.color + "cc" || "#e5e7eb"
+      })`
+    }}
+  />
+
+ <div className="p-3 flex items-center justify-between">
+
+    <div>
+      <p className="font-medium text-gray-800 text-sm">
+        {item.name}
+      </p>
+
+      <p className="text-blue-600 font-bold text-sm">
+        ₹{item.price}
+      </p>
+    </div>
+  </div>
+
+</div>
                 ))
             )}
           </div>
@@ -489,7 +648,7 @@ if (isUnpaidPayment && unpaidLoading) {
   </div>
 )}
         <div className="p-4 border-b">
-          <h2 className="font-bold flex items-center gap-2">
+          <h2 className="font-semibold text-lg flex items-center gap-2">
             <ShoppingCart size={18} />
             Cart
           </h2>
@@ -498,7 +657,7 @@ if (isUnpaidPayment && unpaidLoading) {
 
         <ScrollArea className="flex-1 p-4">
           {cart.map(item => (
-            <div key={item.id} className="flex justify-between mb-3">
+            <div key={item.id} className="flex justify-between items-center mb-3 p-2 rounded-lg hover:bg-gray-50">
               <div>
                 <p>{item.name}</p>
                 <p className="text-sm text-gray-500">
@@ -526,7 +685,6 @@ if (isUnpaidPayment && unpaidLoading) {
   type="number"
   min={0}
   value={discount}
-  disabled={isUnpaidPayment}
   onChange={(e) => setDiscount(Number(e.target.value))}
   className="w-24 h-8"
 />
@@ -553,7 +711,7 @@ if (isUnpaidPayment && unpaidLoading) {
   </div>
 
   <Button
-    className="w-full mt-4"
+className="w-full mt-4 h-12 text-lg font-semibold bg-green-600 hover:bg-green-700"
     disabled={cart.length === 0}
     onClick={() => setCheckoutOpen(true)}
   >
@@ -571,7 +729,7 @@ if (isUnpaidPayment && unpaidLoading) {
       <DialogTitle>Select Payment Method</DialogTitle>
     </DialogHeader>
 
-    <div className="grid grid-cols-2 gap-4 mt-4">
+    <div className="grid grid-cols-2 gap-6 mt-4">
 
       <Button onClick={() => handleCheckout("cash")}>
         <Banknote className="mr-2" /> Cash
@@ -698,13 +856,45 @@ onClick={() => finalizeSale(latestBill || undefined)}
   title="Cash Received"
 />
 
+     {remainingAmount === 0 ? (
+
+  <Button
+    className="w-full mt-4"
+    disabled={totalReceived === 0}
+    onClick={() => completeOrder("cash")}
+  >
+    Confirm Payment
+  </Button>
+
+) : (
+
+  <div className="space-y-3">
+
+    <div className="text-center text-sm text-amber-600 font-semibold">
+      Remaining ₹{remainingAmount}
+    </div>
+
+    <div className="grid grid-cols-2 gap-3">
+
       <Button
-        className="w-full mt-4"
-          disabled={totalReceived === 0}
-        onClick={() => completeOrder("cash")}
-      >
-        Confirm Payment
-      </Button>
+  className="bg-blue-600 text-white"
+  onClick={() => setPaymentMode("eftpos")}
+>
+  Pay Remaining with Card
+</Button>
+
+<Button
+  className="bg-purple-600 text-white"
+  onClick={() => setPaymentMode("upi")}
+>
+  Pay Remaining with UPI
+</Button>
+
+    </div>
+
+  </div>
+
+)}
 
     </div>
 
@@ -720,7 +910,7 @@ onClick={() => finalizeSale(latestBill || undefined)}
     </div>
 
     <div className="text-2xl font-bold">
-      ₹{cartTotal}
+      ₹{totalReceived > 0 ? remainingAmount : cartTotal}
     </div>
 
     {upiQr && (
@@ -750,13 +940,22 @@ onClick={() => finalizeSale(latestBill || undefined)}
 )}
 
           {paymentMode === "eftpos" && (
-            <div className="space-y-3 text-center">
-              <p>Please process payment on EFTPOS machine.</p>
-<Button onClick={() => completeOrder("eftpos")}>
-                Confirm EFTPOS Payment
-              </Button>
-            </div>
-          )}
+  <div className="space-y-3 text-center">
+
+    {totalReceived > 0 && (
+      <p className="text-sm text-gray-500">
+        Remaining to charge: ₹{remainingAmount}
+      </p>
+    )}
+
+    <p>Please process payment on EFTPOS machine.</p>
+
+    <Button onClick={() => completeOrder("eftpos")}>
+      Confirm EFTPOS Payment
+    </Button>
+
+  </div>
+)}
 
           {paymentMode === "unpaid" && (
   <div className="space-y-6">
@@ -833,6 +1032,276 @@ onClick={() => finalizeSale(latestBill || undefined)}
   </DialogContent>
 </Dialog>
 
+<Dialog open={menuAdminOpen} onOpenChange={setMenuAdminOpen}>
+  <DialogContent className="max-w-2xl">
+    <DialogHeader>
+      <DialogTitle>Menu Management</DialogTitle>
+    </DialogHeader>
+
+    <div className="space-y-6">
+
+  {/* CATEGORY LIST */}
+  <div>
+    <div className="flex justify-between items-center mb-2">
+  <h3 className="font-semibold">Categories</h3>
+
+  <Button
+    size="sm"
+    onClick={()=>{
+      setEditingCategory(null)
+      setFormName("")
+      setFormColor("#6366f1")
+      setCategoryDialogOpen(true)
+    }}
+  >
+    Add Category
+  </Button>
+
+</div>
+    
+
+    <div className="space-y-2">
+      {categories?.map((cat:any)=>(
+        <div key={cat.id} className="flex justify-between items-center border p-2 rounded">
+
+          <div className="flex items-center gap-2">
+            <div
+              className="w-4 h-4 rounded"
+              style={{ background: cat.color }}
+            />
+            {cat.name}
+          </div>
+
+          <div className="flex gap-2">
+
+  <Button
+size="sm"
+onClick={()=>{
+  setEditingCategory(cat)
+  setFormName(cat.name)
+  setFormColor(cat.color)
+  setCategoryDialogOpen(true)
+}}
+>
+Edit
+</Button>
+
+  <Button
+    size="sm"
+    variant="destructive"
+    onClick={()=>deleteCategory(cat.id)}
+  >
+    Delete
+  </Button>
+
+</div>
+
+        </div>
+      ))}
+    </div>
+  </div>
+
+
+  {/* MENU ITEMS */}
+  <div>
+    <div className="flex justify-between items-center mb-2">
+  <h3 className="font-semibold">Menu Items</h3>
+
+  <Button
+    size="sm"
+    onClick={()=>{
+      setEditingMenuItem(null)
+      setFormName("")
+      setFormPrice(0)
+      setFormCategory(null)
+      setMenuItemDialogOpen(true)
+    }}
+  >
+    Add Item
+  </Button>
+
+</div>
+
+    <div className="space-y-2 max-h-60 overflow-auto">
+
+      {menuItems?.map((item:any)=>(
+        <div
+          key={item.id}
+          className="flex justify-between items-center border p-2 rounded"
+        >
+
+          <div>
+            {item.name}
+            <div className="text-xs text-gray-500">
+              ₹{item.price}
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+
+  <Button
+size="sm"
+onClick={()=>{
+  setEditingMenuItem(item)
+  setFormName(item.name)
+  setFormPrice(item.price)
+  setFormCategory(item.category_id)
+  setMenuItemDialogOpen(true)
+}}
+>
+Edit
+</Button>
+
+  <Button
+    size="sm"
+    variant="destructive"
+    onClick={()=>deleteMenuItem(item.id)}
+  >
+    Delete
+  </Button>
+
+</div>
+
+        </div>
+      ))}
+
+    </div>
+  </div>
+
+</div>
+
+  </DialogContent>
+</Dialog>
+
+<Dialog open={categoryDialogOpen} onOpenChange={setCategoryDialogOpen}>
+<DialogContent>
+
+<DialogHeader>
+<DialogTitle>
+{editingCategory ? "Edit Category" : "Add Category"}
+</DialogTitle>
+</DialogHeader>
+
+<div className="space-y-3">
+
+<Input
+placeholder="Category Name"
+value={formName}
+onChange={(e)=>setFormName(e.target.value)}
+/>
+
+<Input
+type="color"
+value={formColor}
+onChange={(e)=>setFormColor(e.target.value)}
+/>
+
+<Button
+className="w-full"
+onClick={()=>{
+
+if(editingCategory){
+updateCategory({
+id: editingCategory.id,
+name: formName,
+color: formColor,
+sort_order: editingCategory.sort_order || 0,
+  is_active: true
+})
+}else{
+createCategory({
+name: formName,
+color: formColor,
+sort_order: 0
+})
+}
+
+setCategoryDialogOpen(false)
+
+}}
+>
+Save
+</Button>
+
+</div>
+
+</DialogContent>
+</Dialog>
+
+<Dialog open={menuItemDialogOpen} onOpenChange={setMenuItemDialogOpen}>
+<DialogContent>
+
+<DialogHeader>
+<DialogTitle>
+{editingMenuItem ? "Edit Menu Item" : "Add Menu Item"}
+</DialogTitle>
+</DialogHeader>
+
+<div className="space-y-3">
+
+<Input
+placeholder="Item Name"
+value={formName}
+onChange={(e)=>setFormName(e.target.value)}
+/>
+
+<Input
+type="number"
+placeholder="Price"
+value={formPrice}
+onChange={(e)=>setFormPrice(Number(e.target.value))}
+/>
+
+<select
+className="border rounded p-2 w-full"
+value={formCategory || ""}
+onChange={(e)=>setFormCategory(Number(e.target.value))}
+>
+<option value="">Select Category</option>
+
+{categories?.map((cat:any)=>(
+<option key={cat.id} value={cat.id}>
+{cat.name}
+</option>
+))}
+
+</select>
+
+<Button
+className="w-full"
+onClick={()=>{
+
+if(editingMenuItem){
+
+updateMenuItem({
+id: editingMenuItem.id,
+name: formName,
+price: formPrice,
+category_id: formCategory,
+is_active: true
+})
+
+}else{
+
+createMenuItem({
+name: formName,
+price: formPrice,
+category_id: formCategory
+})
+
+}
+
+setMenuItemDialogOpen(false)
+
+}}
+>
+Save
+</Button>
+
+</div>
+
+</DialogContent>
+</Dialog>
     </div>
   );
 }

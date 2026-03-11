@@ -18,6 +18,7 @@ import { fileURLToPath } from "url";
 import cron from "node-cron";
 import { generateMonthlySalary } from "./jobs/salaryGenerator.js";
 import { sendWhatsAppTemplate } from "./services/whatsappService.js";
+import menuCategoriesRoutes from "./routes/menuCategories.js";
 
 
 
@@ -72,6 +73,8 @@ app.use("/vendors", vendorsRoutes);
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 app.use("/staff", staffRoutes);
+
+app.use("/menu/categories", menuCategoriesRoutes);
 
 // app.get("/dev/run-salary", async (req, res) => {
 //   try {

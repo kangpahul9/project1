@@ -286,6 +286,86 @@ ALTER COLUMN joining_date SET DEFAULT CURRENT_DATE;
 ALTER TABLE staff
 ADD COLUMN salary_cycle TEXT DEFAULT 'monthly';
 
----> new
 ALTER TABLE staff_transactions
 ADD COLUMN salary_month DATE;
+
+--> new
+
+CREATE TABLE menu_categories (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  color TEXT DEFAULT '#6366F1',
+  sort_order INT DEFAULT 0
+);
+
+ALTER TABLE menu
+ADD COLUMN category_id INT REFERENCES menu_categories(id);
+
+CREATE INDEX idx_menu_category
+ON menu(category_id);
+
+ALTER TABLE menu_categories
+ADD COLUMN is_active BOOLEAN DEFAULT TRUE;
+
+ALTER TABLE menu
+ADD COLUMN usage_count INT DEFAULT 0;
+
+ALTER TABLE orders
+DROP CONSTRAINT IF EXISTS orders_payment_method_check;
+
+ALTER TABLE orders
+ADD CONSTRAINT orders_payment_method_check
+CHECK (
+  payment_method IN (
+    'cash',
+    'online',
+    'card',
+    'unpaid',
+    'mixed'
+  )
+);
+
+CREATE TABLE order_payments (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  order_id BIGINT REFERENCES orders(id) ON DELETE CASCADE,
+  payment_method TEXT NOT NULL CHECK (
+    payment_method IN ('cash','card','online')
+  ),
+  amount NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_order_payments_order
+ON order_payments(order_id);
+
+ALTER TABLE orders
+DROP CONSTRAINT IF EXISTS orders_payment_method_check;
+
+ALTER TABLE orders
+ADD CONSTRAINT orders_payment_method_check
+CHECK (
+  payment_method IN (
+    'cash',
+    'online',
+    'card',
+    'unpaid',
+    'mixed-card',
+    'mixed-online'
+  )
+);
+
+INSERT INTO order_payments (order_id, payment_method, amount)
+SELECT
+o.id,
+o.payment_method,
+o.total
+FROM orders o
+WHERE o.payment_method IN ('cash','card','online')
+AND NOT EXISTS (
+  SELECT 1
+  FROM order_payments op
+  WHERE op.order_id = o.id
+);
+
+ALTER TABLE orders
+ADD COLUMN discount NUMERIC(10,2) DEFAULT 0;

@@ -23,7 +23,7 @@ export function useMarkOrderPaid() {
     }: {
       id: number;
       payAmount: number;
-      paymentMethod: "cash" | "online" | "card";
+      paymentMethod: "cash" | "online" | "card" | "mixed-card" | "mixed-online";
       cashBreakdown?: any[];
     }) => {
       const res = await api.post(`/orders/${id}/pay`, {

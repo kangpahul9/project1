@@ -53,6 +53,7 @@ export function useCreateOrder() {
     },
 
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey:["menu"] }) 
       queryClient.invalidateQueries({ queryKey: ["/orders"] });
     },
 

@@ -221,37 +221,68 @@ router.post("/", authenticate, async (req, res) => {
     }
 
     /* ===============================
+   MIXED PAYMENT
+=============================== */
+
+if (paymentMethod.startsWith("mixed"))  {
+
+  if (!cashBreakdown || cashBreakdown.length === 0) {
+    throw new Error("Cash breakdown required for mixed payment");
+  }
+
+  const totalReceived = await addReceivedCash(
+    client,
+    businessDayId,
+    cashBreakdown
+  );
+
+  if (totalReceived > total) {
+    throw new Error("Cash cannot exceed total in mixed payment");
+  }
+
+  const remaining = total - totalReceived;
+
+  // order becomes fully paid
+  paidAmount = total;
+  dueAmount = 0;
+  isPaid = true;
+
+}
+
+    /* ===============================
        INSERT ORDER
     =============================== */
 
     const orderResult = await client.query(
-      `
-      INSERT INTO orders 
-      (business_day_id, user_id, customer_name, customer_phone,
-       payment_method, total, is_paid, amount_paid, due_amount)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-      RETURNING *
-      `,
-      [
-        businessDayId,
-        userId,
-        customerName || null,
-        customerPhone || null,
-        paymentMethod,
-        total,
-        isPaid,
-        paidAmount,
-        dueAmount
-      ]
-    );
+`
+INSERT INTO orders 
+(business_day_id, user_id, customer_name, customer_phone,
+ payment_method, total, is_paid, amount_paid, due_amount)
 
-    const order = orderResult.rows[0];
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+RETURNING *
+`,
+[
+businessDayId,
+userId,
+customerName || null,
+customerPhone || null,
+paymentMethod,
+total,
+isPaid,
+paidAmount,
+dueAmount
+]
+);
 
-    const billNumber = `BD-${order.business_day_id}-${String(order.id).padStart(5, "0")}`;
+const order = orderResult.rows[0];
+
+const billNumber =
+`BD-${order.business_day_id}-${String(order.id).padStart(5,"0")}`;
 
 await client.query(
-  `UPDATE orders SET bill_number = $1 WHERE id = $2`,
-  [billNumber, order.id]
+`UPDATE orders SET bill_number=$1 WHERE id=$2`,
+[billNumber, order.id]
 );
 
 order.bill_number = billNumber;
@@ -261,18 +292,109 @@ order.bill_number = billNumber;
     =============================== */
 
     for (const item of items) {
-      await client.query(
-        `
-        INSERT INTO order_items
-        (order_id, menu_item_id, item_name, quantity, price, price_snapshot)
-VALUES ($1,$2,$3,$4,$5,$6)
-        `,
-        [order.id, item.menuItemId,item.name, item.quantity, item.price, item.price]
-      );
-    }
+
+  await client.query(
+    `
+    INSERT INTO order_items
+    (order_id, menu_item_id, item_name, quantity, price, price_snapshot)
+    VALUES ($1,$2,$3,$4,$5,$6)
+    `,
+    [
+      order.id,
+      item.menuItemId,
+      item.name,
+      item.quantity,
+      item.price,
+      item.price
+    ]
+  );
+
+  // 🔥 Increase popularity count
+  await client.query(
+    `
+    UPDATE menu
+    SET usage_count = usage_count + $1
+    WHERE id = $2
+    `,
+    [
+      item.quantity,
+      item.menuItemId
+    ]
+  );
+
+}
     /* ===============================
    CASH LEDGER ENTRY
 =============================== */
+
+/* ===============================
+   STORE PAYMENT SPLIT
+=============================== */
+
+if (paymentMethod === "cash") {
+
+  await client.query(
+    `INSERT INTO order_payments
+     (order_id, payment_method, amount)
+     VALUES ($1,'cash',$2)`,
+    [order.id, total]
+  );
+
+}
+
+if (paymentMethod === "online") {
+
+  await client.query(
+    `INSERT INTO order_payments
+     (order_id, payment_method, amount)
+     VALUES ($1,'online',$2)`,
+    [order.id, total]
+  );
+
+}
+
+if (paymentMethod === "card") {
+
+  await client.query(
+    `INSERT INTO order_payments
+     (order_id, payment_method, amount)
+     VALUES ($1,'card',$2)`,
+    [order.id, total]
+  );
+
+}
+
+if (paymentMethod.startsWith("mixed"))  {
+
+  const cashAmount = cashBreakdown.reduce(
+    (sum, n) => sum + Number(n.note) * Number(n.qty),
+    0
+  );
+
+  const remaining = total - cashAmount;
+
+  const digitalMethod =
+  paymentMethod === "mixed-online" ? "online" : "card";
+
+  if (cashAmount > 0) {
+    await client.query(
+      `INSERT INTO order_payments
+       (order_id, payment_method, amount)
+       VALUES ($1,'cash',$2)`,
+      [order.id, cashAmount]
+    );
+  }
+
+  if (remaining > 0) {
+    await client.query(
+      `INSERT INTO order_payments
+       (order_id, payment_method, amount)
+       VALUES ($1, $2, $3)`,
+      [order.id, digitalMethod, remaining]
+    );
+  }
+
+}
 
 if (paymentMethod === "cash") {
   await client.query(
@@ -283,6 +405,25 @@ if (paymentMethod === "cash") {
     `,
     [businessDayId, order.id, total]
   );
+}
+
+if (paymentMethod.startsWith("mixed"))  {
+
+  const cashAmount = cashBreakdown.reduce(
+    (sum, n) => sum + Number(n.note) * Number(n.qty),
+    0
+  );
+
+  if (cashAmount > 0) {
+    await client.query(
+      `
+      INSERT INTO cash_ledger
+      (business_day_id, type, reference_id, amount)
+      VALUES ($1, 'sale', $2, $3)
+      `,
+      [businessDayId, order.id, cashAmount]
+    );
+  }
 }
 
 if (paymentMethod === "unpaid" && paidAmount > 0) {
@@ -352,9 +493,22 @@ router.get("/", authenticate, async (req, res) => {
 
       result = await pool.query(
         `
-        SELECT *
-        FROM orders
-        ORDER BY created_at DESC
+        SELECT
+o.*,
+COALESCE(
+  json_agg(
+    json_build_object(
+      'method', op.payment_method,
+      'amount', op.amount
+    )
+  ) FILTER (WHERE op.id IS NOT NULL),
+  '[]'
+) AS payments
+FROM orders o
+LEFT JOIN order_payments op
+ON op.order_id = o.id
+GROUP BY o.id
+ORDER BY o.created_at DESC
         LIMIT 10
         `
       );
@@ -363,9 +517,19 @@ router.get("/", authenticate, async (req, res) => {
 
       result = await pool.query(
         `
-        SELECT *
-        FROM orders
-        ORDER BY created_at DESC
+        SELECT
+o.*,
+json_agg(
+  json_build_object(
+    'method', op.payment_method,
+    'amount', op.amount
+  )
+) AS payments
+FROM orders o
+LEFT JOIN order_payments op
+ON op.order_id = o.id
+GROUP BY o.id
+ORDER BY o.created_at DESC
         `
       );
 
@@ -537,6 +701,23 @@ if (paymentMethod === "cash" && receivedAmount > 0) {
     [order.business_day_id, order.id, receivedAmount]
   );
 }
+
+await client.query(
+`
+INSERT INTO order_payments
+(order_id, payment_method, amount)
+VALUES ($1,$2,$3)
+`,
+[
+order.id,
+paymentMethod === "cash"
+? "cash"
+: paymentMethod === "card"
+? "card"
+: "online",
+receivedAmount
+]
+);
 
     await client.query("COMMIT");
 

@@ -18,18 +18,24 @@ if (!date) {
 const salesRes = await pool.query(
   `
   SELECT
-    COUNT(*) as total_orders,
-    SUM(total) as total_sales,
-    SUM(CASE WHEN is_paid = true THEN 1 ELSE 0 END) as paid_orders,
-    SUM(CASE WHEN is_paid = false THEN 1 ELSE 0 END) as unpaid_orders,
-    SUM(CASE WHEN payment_method = 'cash' THEN total ELSE 0 END) as total_cash,
-    SUM(CASE WHEN payment_method = 'card' THEN total ELSE 0 END) as total_card,
-    SUM(CASE WHEN payment_method = 'online' THEN total ELSE 0 END) as total_online,
-    SUM(CASE WHEN payment_method = 'unpaid' THEN total ELSE 0 END) as total_credit_given,
-    SUM(due_amount) as total_outstanding
-  FROM orders
-WHERE created_at >= $1::date
-AND created_at < ($1::date + INTERVAL '1 day')  `,
+  COUNT(DISTINCT o.id) as total_orders,
+  SUM(o.total) as total_sales,
+  SUM(CASE WHEN o.is_paid = true THEN 1 ELSE 0 END) as paid_orders,
+  SUM(CASE WHEN o.is_paid = false THEN 1 ELSE 0 END) as unpaid_orders,
+
+  SUM(CASE WHEN op.payment_method = 'cash' THEN op.amount ELSE 0 END) as total_cash,
+  SUM(CASE WHEN op.payment_method = 'card' THEN op.amount ELSE 0 END) as total_card,
+  SUM(CASE WHEN op.payment_method = 'online' THEN op.amount ELSE 0 END) as total_online,
+
+  SUM(CASE WHEN o.payment_method = 'unpaid' THEN o.total ELSE 0 END) as total_credit_given,
+  SUM(o.due_amount) as total_outstanding
+
+FROM orders o
+LEFT JOIN order_payments op
+ON op.order_id = o.id
+
+WHERE o.created_at >= $1::date
+AND o.created_at < ($1::date + INTERVAL '1 day');`,
   [date]
 );
 
@@ -76,18 +82,24 @@ router.get("/weekly-summary", authenticate, requireAdmin,async (req, res) => {
   try {
     // Current week
     const currentWeek = await pool.query(`
-      SELECT
-        COUNT(*) as total_orders,
-        SUM(total) as total_sales,
-        SUM(CASE WHEN is_paid = true THEN 1 ELSE 0 END) as paid_orders,
-        SUM(CASE WHEN is_paid = false THEN 1 ELSE 0 END) as unpaid_orders,
-        SUM(CASE WHEN payment_method = 'cash' THEN total ELSE 0 END) as total_cash,
-        SUM(CASE WHEN payment_method = 'card' THEN total ELSE 0 END) as total_card,
-        SUM(CASE WHEN payment_method = 'online' THEN total ELSE 0 END) as total_online,
-        SUM(CASE WHEN payment_method = 'unpaid' THEN total ELSE 0 END) as total_credit_given,
-        SUM(due_amount) as total_outstanding
-      FROM orders
-      WHERE created_at >= NOW() - INTERVAL '7 days'
+     SELECT
+COUNT(DISTINCT o.id) as total_orders,
+SUM(o.total) as total_sales,
+SUM(CASE WHEN o.is_paid = true THEN 1 ELSE 0 END) as paid_orders,
+SUM(CASE WHEN o.is_paid = false THEN 1 ELSE 0 END) as unpaid_orders,
+
+SUM(CASE WHEN op.payment_method = 'cash' THEN op.amount ELSE 0 END) as total_cash,
+SUM(CASE WHEN op.payment_method = 'card' THEN op.amount ELSE 0 END) as total_card,
+SUM(CASE WHEN op.payment_method = 'online' THEN op.amount ELSE 0 END) as total_online,
+
+SUM(CASE WHEN o.payment_method = 'unpaid' THEN o.total ELSE 0 END) as total_credit_given,
+SUM(o.due_amount) as total_outstanding
+
+FROM orders o
+LEFT JOIN order_payments op
+ON op.order_id = o.id
+
+WHERE o.created_at >= NOW() - INTERVAL '7 days'
     `);
 
     // Previous week
@@ -153,18 +165,24 @@ router.get("/monthly-summary", authenticate,requireAdmin, async (req, res) => {
   try {
     // Current month (last 30 days)
     const currentMonth = await pool.query(`
-      SELECT
-        COUNT(*) as total_orders,
-        SUM(total) as total_sales,
-        SUM(CASE WHEN is_paid = true THEN 1 ELSE 0 END) as paid_orders,
-        SUM(CASE WHEN is_paid = false THEN 1 ELSE 0 END) as unpaid_orders,
-        SUM(CASE WHEN payment_method = 'cash' THEN total ELSE 0 END) as total_cash,
-        SUM(CASE WHEN payment_method = 'card' THEN total ELSE 0 END) as total_card,
-        SUM(CASE WHEN payment_method = 'online' THEN total ELSE 0 END) as total_online,
-        SUM(CASE WHEN payment_method = 'unpaid' THEN total ELSE 0 END) as total_credit_given,
-        SUM(due_amount) as total_outstanding
-      FROM orders
-      WHERE created_at >= NOW() - INTERVAL '30 days'
+     SELECT
+COUNT(DISTINCT o.id) as total_orders,
+SUM(o.total) as total_sales,
+SUM(CASE WHEN o.is_paid = true THEN 1 ELSE 0 END) as paid_orders,
+SUM(CASE WHEN o.is_paid = false THEN 1 ELSE 0 END) as unpaid_orders,
+
+SUM(CASE WHEN op.payment_method = 'cash' THEN op.amount ELSE 0 END) as total_cash,
+SUM(CASE WHEN op.payment_method = 'card' THEN op.amount ELSE 0 END) as total_card,
+SUM(CASE WHEN op.payment_method = 'online' THEN op.amount ELSE 0 END) as total_online,
+
+SUM(CASE WHEN o.payment_method = 'unpaid' THEN o.total ELSE 0 END) as total_credit_given,
+SUM(o.due_amount) as total_outstanding
+
+FROM orders o
+LEFT JOIN order_payments op
+ON op.order_id = o.id
+
+WHERE o.created_at >= NOW() - INTERVAL '30 days'
     `);
 
     // Previous month (30–60 days ago)

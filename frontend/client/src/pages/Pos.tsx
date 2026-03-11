@@ -77,7 +77,7 @@ const [formCategory,setFormCategory] = useState<number|null>(null)
 const [formColor,setFormColor] = useState("#6366f1")
 
 const [paymentMode, setPaymentMode] =
-  useState<"cash" | "upi" | "eftpos" | "unpaid"  | "mixed" | null>(null);  const [customerName, setCustomerName] = useState("");
+  useState<"cash" | "upi" | "eftpos" | "unpaid"  | "mixed-card" | "mixed-online" | null>(null);  const [customerName, setCustomerName] = useState("");
 const DENOMS = [500,200,100,50,20,10,5,2,1];
 const NOTE_COLORS: Record<number, string> = {
   500: "bg-amber-400",
@@ -189,6 +189,10 @@ useEffect(() => {
   }
 }, [paymentMode, cartTotal, totalReceived]);
 
+useEffect(() => {
+  if (!paymentDialog) setUpiQr(null)
+}, [paymentDialog]);
+
 const remainingAmount = Math.max(0, cartTotal - totalReceived);
 
   const updateQuantity = (id: number, delta: number) => {
@@ -227,7 +231,7 @@ const remainingAmount = Math.max(0, cartTotal - totalReceived);
      COMPLETE ORDER
   =============================== */
  const completeOrder = (
-  method: "cash" | "upi" | "eftpos" | "unpaid" | "mixed"
+  method: "cash" | "upi" | "eftpos" | "unpaid"
 ) => {
   if (!currentDay || !user) return;
 
@@ -257,15 +261,13 @@ const remainingAmount = Math.max(0, cartTotal - totalReceived);
   {
     id: unpaidOrder.id,
     payAmount,
-    paymentMethod:
+   paymentMethod:
   method === "upi"
     ? "online"
     : method === "eftpos"
     ? "card"
-    : method === "mixed"
-    ? "mixed"
-    : method,
-    cashBreakdown: method === "cash" || method === "mixed" ? cashBreakdown : undefined,
+    : "cash",
+    cashBreakdown: method === "cash" ? cashBreakdown : undefined,
   },
       {
         onSuccess: (data: any) => {
@@ -477,7 +479,7 @@ if (isUnpaidPayment && unpaidLoading) {
 <div className="flex flex-col lg:flex-row bg-gray-50 min-h-screen">
       <Sidebar />
 
-<main className="flex-1 lg:ml-64 p-4 sm:p-6 flex flex-col">
+<main className="flex-1 lg:ml-64 p-4 sm:p-6 flex flex-col min-w-0">
        <div className="flex items-center gap-3 mb-4">
 
   <div className="relative flex-1">
@@ -539,7 +541,7 @@ onClick={() => setSelectedCategory(cat.id)}
 
 </div>
 
-<ScrollArea className="flex-1">
+<ScrollArea className="flex-1 w-full">
   {/* 🔥 Popular Items
 
 {popularItems.length > 0 && (
@@ -566,6 +568,7 @@ onClick={() => setSelectedCategory(cat.id)}
           <p className="text-xs text-purple-700 font-semibold">
             ₹{item.price}
           </p>
+          
 
         </div>
 
@@ -575,11 +578,12 @@ onClick={() => setSelectedCategory(cat.id)}
 
   </div>
 )} */}
-<div className="grid 
-  grid-cols-2 
-  sm:grid-cols-3 
-  md:grid-cols-4 
-  lg:grid-cols-5 
+<div className="grid w-full
+  grid-cols-2
+  sm:grid-cols-3
+  md:grid-cols-4
+  lg:grid-cols-5
+  xl:grid-cols-6
   gap-4 pb-10"
 >
             {isLoading ? (
@@ -641,41 +645,58 @@ return searchMatch && categoryMatch;
       
 
       {/* CART */}
-<aside className="w-full lg:w-[400px] bg-white border-t lg:border-l flex flex-col">
-        {isUnpaidPayment && unpaidOrder && (
+<aside className="w-full lg:w-[380px] xl:w-[420px] bg-white border-t lg:border-l flex flex-col shrink-0 max-h-screen">        {isUnpaidPayment && unpaidOrder && (
   <div className="bg-amber-100 border border-amber-300 p-3 text-amber-800 text-sm">
     Settling Unpaid Order #{unpaidOrder.id}
   </div>
 )}
-        <div className="p-4 border-b">
-          <h2 className="font-semibold text-lg flex items-center gap-2">
-            <ShoppingCart size={18} />
-            Cart
-          </h2>
-          
-        </div>
+        <div className="p-6 border-b flex items-center justify-between">
+  <h2 className="font-bold text-2xl flex items-center gap-3">
+    <ShoppingCart size={22} />
+    Current Order
+  </h2>
+
+  <div className="border rounded-full px-4 py-1 text-sm text-gray-600">
+    {cart.length} items
+  </div>
+</div>
 
         <ScrollArea className="flex-1 p-4">
           {cart.map(item => (
-            <div key={item.id} className="flex justify-between items-center mb-3 p-2 rounded-lg hover:bg-gray-50">
-              <div>
-                <p>{item.name}</p>
-                <p className="text-sm text-gray-500">
-                  ₹{item.price} x {item.quantity}
-                </p>
-              </div>
-              <div className="flex gap-2 items-center">
-                <button onClick={() => updateQuantity(item.id, -1)}>
-                  <Minus size={16} />
-                </button>
-                <button onClick={() => updateQuantity(item.id, 1)}>
-                  <Plus size={16} />
-                </button>
-                <button onClick={() => removeFromCart(item.id)}>
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </div>
+            <div
+  key={item.id}
+  className="flex justify-between items-center mb-4 p-4 rounded-2xl border bg-white shadow-sm"
+>
+  <div>
+    <p className="text-lg font-semibold text-gray-800">
+      {item.name}
+    </p>
+
+    <p className="text-blue-600 text-xl font-bold">
+      ₹{item.price}
+    </p>
+  </div>
+
+  <div className="flex items-center gap-4 bg-gray-100 px-4 py-2 rounded-xl">
+    <button
+      className="text-xl"
+      onClick={() => updateQuantity(item.id, -1)}
+    >
+      −
+    </button>
+
+    <span className="text-lg font-semibold">
+      {item.quantity}
+    </span>
+
+    <button
+      className="text-xl"
+      onClick={() => updateQuantity(item.id, 1)}
+    >
+      +
+    </button>
+  </div>
+</div>
           ))}
         </ScrollArea>
 
@@ -724,7 +745,7 @@ className="w-full mt-4 h-12 text-lg font-semibold bg-green-600 hover:bg-green-70
 
 {/* PAYMENT METHOD SELECT */}
 <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
-<DialogContent className="w-[95vw] max-w-4xl">
+<DialogContent className="w-[95vw] max-w-4xl max-h-[90vh] overflow-y-auto">
     <DialogHeader>
       <DialogTitle>Select Payment Method</DialogTitle>
     </DialogHeader>
@@ -850,11 +871,13 @@ onClick={() => finalizeSale(latestBill || undefined)}
 </div>
 
 
-      <DenominationSelector
-  breakdown={cashBreakdown}
-  setBreakdown={setCashBreakdown}
-  title="Cash Received"
-/>
+      <div className="max-h-[45vh] overflow-y-auto">
+  <DenominationSelector
+    breakdown={cashBreakdown}
+    setBreakdown={setCashBreakdown}
+    title="Cash Received"
+  />
+</div>
 
      {remainingAmount === 0 ? (
 
@@ -974,11 +997,13 @@ onClick={() => finalizeSale(latestBill || undefined)}
       </div>
     </div>
 
-    <DenominationSelector
-  breakdown={cashBreakdown}
-  setBreakdown={setCashBreakdown}
-  title="Cash Received"
-/>
+    <div className="max-h-[45vh] overflow-y-auto">
+  <DenominationSelector
+    breakdown={cashBreakdown}
+    setBreakdown={setCashBreakdown}
+    title="Cash Received"
+  />
+</div>
 
     <Button
       className="w-full"
@@ -1033,12 +1058,13 @@ onClick={() => finalizeSale(latestBill || undefined)}
 </Dialog>
 
 <Dialog open={menuAdminOpen} onOpenChange={setMenuAdminOpen}>
-  <DialogContent className="max-w-2xl">
+  <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
     <DialogHeader>
       <DialogTitle>Menu Management</DialogTitle>
     </DialogHeader>
 
-    <div className="space-y-6">
+    <ScrollArea className="flex-1 pr-4">
+  <div className="space-y-6">
 
   {/* CATEGORY LIST */}
   <div>
@@ -1169,6 +1195,7 @@ Edit
   </div>
 
 </div>
+</ScrollArea>
 
   </DialogContent>
 </Dialog>

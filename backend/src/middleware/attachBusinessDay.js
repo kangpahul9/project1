@@ -1,6 +1,3 @@
-import pool from "../config/db.js";
-import { getBusinessDay } from "../utils/getBusinessDay.js";
-
 export async function attachBusinessDay(req,res,next){
   const client = await pool.connect()
 
@@ -8,7 +5,8 @@ export async function attachBusinessDay(req,res,next){
     req.businessDayId = await getBusinessDay(
       client,
       req.restaurantId,
-      req.settings
+      req.settings,
+      req.user?.id   // ✅ ADD THIS
     )
     next()
   } catch(err){

@@ -1,6 +1,8 @@
 import express from "express";
 import pool from "../config/db.js";
 import { authenticate } from "../middleware/authMiddleware.js";
+import { getBusinessDay } from "../utils/getBusinessDay.js";
+import { addBankTransaction } from "../utils/bankLedger.js";
 
 const router = express.Router();
 
@@ -9,7 +11,7 @@ const VALID_DENOMS = [500, 200, 100, 50, 20, 10, 5, 2, 1];
 /* =========================================
    ADD RECEIVED CASH TO DRAWER
 ========================================= */
-async function addReceivedCash(client, businessDayId, breakdown) {
+async function addReceivedCash(client,restaurantId, finalBusinessDayId, breakdown) {
   let totalReceived = 0;
 
   for (const note of breakdown) {
@@ -22,13 +24,13 @@ async function addReceivedCash(client, businessDayId, breakdown) {
 
     await client.query(
       `
-      INSERT INTO denominations (business_day_id, note_value, quantity)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (business_day_id, note_value)
+      INSERT INTO denominations (restaurant_id,business_day_id, note_value, quantity)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (restaurant_id,business_day_id, note_value)
       DO UPDATE
       SET quantity = denominations.quantity + EXCLUDED.quantity
       `,
-      [businessDayId, noteValue, qty]
+      [restaurantId,finalBusinessDayId, noteValue, qty]
     );
   }
 
@@ -38,7 +40,7 @@ async function addReceivedCash(client, businessDayId, breakdown) {
 /* =========================================
    GREEDY CHANGE (LARGEST FIRST)
 ========================================= */
-async function returnChange(client, businessDayId, changeRequired) {
+async function returnChange(client, restaurantId, finalBusinessDayId, changeRequired) {
   let remaining = Number(changeRequired);
   const changeGiven = [];
 
@@ -46,10 +48,10 @@ async function returnChange(client, businessDayId, changeRequired) {
     `
     SELECT id, note_value, quantity
     FROM denominations
-    WHERE business_day_id = $1
+    WHERE restaurant_id=$1 AND business_day_id = $2
     ORDER BY note_value DESC
     `,
-    [businessDayId]
+    [restaurantId,finalBusinessDayId]
   );
 
   for (const row of denomRes.rows) {
@@ -71,9 +73,9 @@ async function returnChange(client, businessDayId, changeRequired) {
         `
         UPDATE denominations
         SET quantity = quantity - $1
-        WHERE id = $2
+        WHERE restaurant_id=$2 AND id = $3
         `,
-        [used, row.id]
+        [used, restaurantId, row.id]
       );
 
       changeGiven.push({
@@ -118,7 +120,7 @@ router.post("/", authenticate, async (req, res) => {
     /* ===============================
        CALCULATE TOTAL
     =============================== */
-
+const finalBusinessDayId = req.businessDayId
     const subtotal = items.reduce(
       (sum, item) => sum + Number(item.price) * Number(item.quantity),
       0
@@ -147,7 +149,8 @@ router.post("/", authenticate, async (req, res) => {
 
       const totalReceived = await addReceivedCash(
         client,
-        businessDayId,
+        req.restaurantId,
+        finalBusinessDayId,
         cashBreakdown
       );
 
@@ -160,7 +163,8 @@ router.post("/", authenticate, async (req, res) => {
       if (change > 0) {
         changeBreakdown = await returnChange(
           client,
-          businessDayId,
+          req.restaurantId,
+          finalBusinessDayId,
           change
         );
       }
@@ -195,7 +199,8 @@ router.post("/", authenticate, async (req, res) => {
 
     const received = await addReceivedCash(
       client,
-      businessDayId,
+      req.restaurantId,
+      finalBusinessDayId,
       cashBreakdown
     );
 
@@ -232,7 +237,8 @@ if (paymentMethod.startsWith("mixed"))  {
 
   const totalReceived = await addReceivedCash(
     client,
-    businessDayId,
+    req.restaurantId,
+    finalBusinessDayId,
     cashBreakdown
   );
 
@@ -249,6 +255,42 @@ if (paymentMethod.startsWith("mixed"))  {
 
 }
 
+
+await client.query(
+`
+SELECT id
+FROM orders
+WHERE restaurant_id = $1
+AND business_day_id = $2
+FOR UPDATE
+`,
+[req.restaurantId, finalBusinessDayId]
+);
+
+
+/* ===============================
+   GET NEXT BILL SEQ
+=============================== */
+
+const seqRes = await client.query(
+`
+SELECT COALESCE(MAX(bill_seq),0) + 1 AS next_seq
+FROM orders
+WHERE restaurant_id = $1
+AND business_day_id = $2
+`,
+[req.restaurantId, finalBusinessDayId]
+);
+
+const billSeq = seqRes.rows[0].next_seq;
+
+const billNumber =
+`BD-${finalBusinessDayId}-${String(billSeq).padStart(5,"0")}`;
+
+
+
+
+
     /* ===============================
        INSERT ORDER
     =============================== */
@@ -256,54 +298,70 @@ if (paymentMethod.startsWith("mixed"))  {
     const orderResult = await client.query(
 `
 INSERT INTO orders 
-(business_day_id, user_id, customer_name, customer_phone,
- payment_method, total, is_paid, amount_paid, due_amount)
+(restaurant_id,business_day_id, user_id, customer_name, customer_phone,
+ payment_method, total, is_paid, amount_paid, due_amount, bill_seq, bill_number)
 
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 RETURNING *
 `,
 [
-businessDayId,
-userId,
-customerName || null,
-customerPhone || null,
-paymentMethod,
-total,
-isPaid,
-paidAmount,
-dueAmount
+  req.restaurantId,
+  finalBusinessDayId,
+  userId,
+  customerName || null,
+  customerPhone || null,
+  paymentMethod,
+  total,
+  isPaid,
+  paidAmount,
+  dueAmount,
+  billSeq,
+  billNumber
 ]
 );
 
 const order = orderResult.rows[0];
 
-const billNumber =
-`BD-${order.business_day_id}-${String(order.id).padStart(5,"0")}`;
 
-await client.query(
-`UPDATE orders SET bill_number=$1 WHERE id=$2`,
-[billNumber, order.id]
-);
 
-order.bill_number = billNumber;
 
     /* ===============================
        INSERT ORDER ITEMS
     =============================== */
 
+    
+
     for (const item of items) {
+
+      const menuCheck = await client.query(
+`
+SELECT id, price
+FROM menu
+WHERE restaurant_id = $1
+AND id = $2
+AND is_active = TRUE
+`,
+[req.restaurantId, item.menuItemId]
+);
+
+if (menuCheck.rows.length === 0) {
+  throw new Error("Invalid menu item");
+}
+const dbPrice = Number(menuCheck.rows[0].price);
+
 
   await client.query(
     `
     INSERT INTO order_items
-    (order_id, menu_item_id, item_name, quantity, price, price_snapshot)
-    VALUES ($1,$2,$3,$4,$5,$6)
+    (restaurant_id,order_id, menu_item_id, item_name, quantity, price, price_snapshot)
+    VALUES ($1,$2,$3,$4,$5,$6,$7)
     `,
     [
+      req.restaurantId,
       order.id,
       item.menuItemId,
       item.name,
-      item.quantity,
+      Number(item.quantity),
       item.price,
       item.price
     ]
@@ -314,10 +372,11 @@ order.bill_number = billNumber;
     `
     UPDATE menu
     SET usage_count = usage_count + $1
-    WHERE id = $2
+    WHERE restaurant_id=$2 AND id = $3
     `,
     [
-      item.quantity,
+      Number(item.quantity),
+      req.restaurantId,
       item.menuItemId
     ]
   );
@@ -335,9 +394,9 @@ if (paymentMethod === "cash") {
 
   await client.query(
     `INSERT INTO order_payments
-     (order_id, payment_method, amount)
-     VALUES ($1,'cash',$2)`,
-    [order.id, total]
+     (restaurant_id,order_id, payment_method, amount)
+     VALUES ($1,$2,'cash',$3)`,
+    [req.restaurantId,order.id, total]
   );
 
 }
@@ -346,9 +405,9 @@ if (paymentMethod === "online") {
 
   await client.query(
     `INSERT INTO order_payments
-     (order_id, payment_method, amount)
-     VALUES ($1,'online',$2)`,
-    [order.id, total]
+     (restaurant_id,order_id, payment_method, amount)
+     VALUES ($1,$2,'online',$3)`,
+    [req.restaurantId,order.id, total]
   );
 
 }
@@ -357,11 +416,65 @@ if (paymentMethod === "card") {
 
   await client.query(
     `INSERT INTO order_payments
-     (order_id, payment_method, amount)
-     VALUES ($1,'card',$2)`,
-    [order.id, total]
+     (restaurant_id,order_id, payment_method, amount)
+     VALUES ($1,$2,'card',$3)`,
+    [req.restaurantId,order.id, total]
   );
 
+}
+
+// 🔥 BANK CREDIT (ONLINE / CARD)
+if (paymentMethod === "online" || paymentMethod === "card") {
+
+  const bankRes = await client.query(
+    `SELECT id FROM bank_accounts WHERE restaurant_id=$1 LIMIT 1`,
+    [req.restaurantId]
+  );
+
+  const bankAccountId = bankRes.rows[0]?.id;
+
+  if (!bankAccountId) {
+    throw new Error("Bank account not configured");
+  }
+
+  await addBankTransaction(client, {
+    restaurantId: req.restaurantId,
+    bankAccountId,
+    amount: total,
+    type: "credit",
+    source: "order",
+    referenceId: order.id,
+    description: "Customer payment"
+  });
+}
+
+if (paymentMethod.startsWith("mixed")) {
+
+  const cashAmount = cashBreakdown.reduce(
+    (sum, n) => sum + Number(n.note) * Number(n.qty),
+    0
+  );
+
+  const onlineAmount = total - cashAmount;
+
+  if (onlineAmount > 0) {
+    const bankRes = await client.query(
+      `SELECT id FROM bank_accounts WHERE restaurant_id=$1 LIMIT 1`,
+      [req.restaurantId]
+    );
+
+    const bankAccountId = bankRes.rows[0]?.id;
+
+    await addBankTransaction(client, {
+      restaurantId: req.restaurantId,
+      bankAccountId,
+      amount: onlineAmount,
+      type: "credit",
+      source: "order",
+      referenceId: order.id,
+      description: "Mixed payment (online/card)"
+    });
+  }
 }
 
 if (paymentMethod.startsWith("mixed"))  {
@@ -379,18 +492,18 @@ if (paymentMethod.startsWith("mixed"))  {
   if (cashAmount > 0) {
     await client.query(
       `INSERT INTO order_payments
-       (order_id, payment_method, amount)
-       VALUES ($1,'cash',$2)`,
-      [order.id, cashAmount]
+       (restaurant_id,order_id, payment_method, amount)
+       VALUES ($1,$2,'cash',$3)`,
+      [req.restaurantId,order.id, cashAmount]
     );
   }
 
   if (remaining > 0) {
     await client.query(
       `INSERT INTO order_payments
-       (order_id, payment_method, amount)
-       VALUES ($1, $2, $3)`,
-      [order.id, digitalMethod, remaining]
+       (restaurant_id,order_id, payment_method, amount)
+       VALUES ($1, $2, $3, $4)`,
+      [req.restaurantId,order.id, digitalMethod, remaining]
     );
   }
 
@@ -400,10 +513,10 @@ if (paymentMethod === "cash") {
   await client.query(
     `
     INSERT INTO cash_ledger
-    (business_day_id, type, reference_id, amount)
-    VALUES ($1, 'sale', $2, $3)
+    (restaurant_id,business_day_id, type, reference_id, amount)
+    VALUES ($1, $2, 'sale', $3, $4)
     `,
-    [businessDayId, order.id, total]
+    [req.restaurantId,finalBusinessDayId, order.id, total]
   );
 }
 
@@ -418,10 +531,10 @@ if (paymentMethod.startsWith("mixed"))  {
     await client.query(
       `
       INSERT INTO cash_ledger
-      (business_day_id, type, reference_id, amount)
-      VALUES ($1, 'sale', $2, $3)
+      (restaurant_id,business_day_id, type, reference_id, amount)
+      VALUES ($1,$2, 'sale', $3, $4)
       `,
-      [businessDayId, order.id, cashAmount]
+      [req.restaurantId,finalBusinessDayId, order.id, cashAmount]
     );
   }
 }
@@ -430,10 +543,10 @@ if (paymentMethod === "unpaid" && paidAmount > 0) {
   await client.query(
     `
     INSERT INTO cash_ledger
-    (business_day_id, type, reference_id, amount)
-    VALUES ($1, 'sale', $2, $3)
+    (restaurant_id,business_day_id, type, reference_id, amount)
+    VALUES ($1, $2, 'sale', $3, $4)
     `,
-    [businessDayId, order.id, paidAmount]
+    [req.restaurantId,finalBusinessDayId, order.id, paidAmount]
   );
 }
     await client.query("COMMIT");
@@ -468,9 +581,9 @@ router.get("/unpaid", authenticate, async (req, res) => {
         (total - amount_paid) AS due_amount,
         created_at
       FROM orders
-      WHERE is_paid = false
+      WHERE restaurant_id=$1 AND is_paid = false
       ORDER BY created_at DESC
-    `);
+    `, [req.restaurantId]);
 
     res.json(result.rows);
 
@@ -494,23 +607,25 @@ router.get("/", authenticate, async (req, res) => {
       result = await pool.query(
         `
         SELECT
-o.*,
-COALESCE(
-  json_agg(
-    json_build_object(
-      'method', op.payment_method,
-      'amount', op.amount
-    )
-  ) FILTER (WHERE op.id IS NOT NULL),
-  '[]'
-) AS payments
+  o.*,
+  COALESCE(
+    json_agg(
+      json_build_object(
+        'method', op.payment_method,
+        'amount', op.amount
+      )
+    ) FILTER (WHERE op.id IS NOT NULL),
+    '[]'
+  ) AS payments
 FROM orders o
 LEFT JOIN order_payments op
-ON op.order_id = o.id
+  ON op.order_id = o.id
+  AND op.restaurant_id = $1
+WHERE o.restaurant_id = $1
 GROUP BY o.id
 ORDER BY o.created_at DESC
         LIMIT 10
-        `
+        `,[req.restaurantId]
       );
 
     } else {
@@ -518,19 +633,24 @@ ORDER BY o.created_at DESC
       result = await pool.query(
         `
         SELECT
-o.*,
-json_agg(
-  json_build_object(
-    'method', op.payment_method,
-    'amount', op.amount
-  )
-) AS payments
+  o.*,
+  COALESCE(
+    json_agg(
+      json_build_object(
+        'method', op.payment_method,
+        'amount', op.amount
+      )
+    ) FILTER (WHERE op.id IS NOT NULL),
+    '[]'
+  ) AS payments
 FROM orders o
 LEFT JOIN order_payments op
-ON op.order_id = o.id
+  ON op.order_id = o.id
+  AND op.restaurant_id = $1
+WHERE o.restaurant_id = $1
 GROUP BY o.id
 ORDER BY o.created_at DESC
-        `
+        `,[req.restaurantId]
       );
 
     }
@@ -545,6 +665,16 @@ ORDER BY o.created_at DESC
 
 
 router.get("/bill/:billNumber", authenticate, async (req, res) => {
+
+  if (
+  req.user.role === "STAFF" &&
+  !req.settings.allow_staff_print
+) {
+  return res.status(403).json({
+    message: "Printing disabled for staff"
+  });
+}
+
   try {
     const { billNumber } = req.params;
 
@@ -554,9 +684,9 @@ router.get("/bill/:billNumber", authenticate, async (req, res) => {
              customer_phone, payment_method, total,
              is_paid, amount_paid, due_amount, created_at
       FROM orders
-      WHERE bill_number = $1
+      WHERE restaurant_id=$1 AND bill_number = $2
       `,
-      [billNumber]
+      [req.restaurantId,billNumber]
     );
 
     if (orderRes.rows.length === 0) {
@@ -573,9 +703,9 @@ router.get("/bill/:billNumber", authenticate, async (req, res) => {
         quantity,
         price_snapshot
       FROM order_items
-      WHERE order_id = $1
+      WHERE restaurant_id=$1 AND order_id = $2
       `,
-      [order.id]
+      [req.restaurantId,order.id]
     );
 
     res.json({
@@ -607,8 +737,8 @@ router.post("/:id/pay", authenticate, async (req, res) => {
        customer_phone, payment_method, total,
        is_paid, amount_paid, due_amount, created_at
 FROM orders
-WHERE id = $1`,
-      [id]
+WHERE restaurant_id=$1 AND id = $2`,
+      [req.restaurantId,id]
     );
 
     if (orderRes.rows.length === 0) {
@@ -636,6 +766,7 @@ WHERE id = $1`,
 
       receivedAmount = await addReceivedCash(
         client,
+        req.restaurantId,
         order.business_day_id,
         cashBreakdown
       );
@@ -657,6 +788,7 @@ WHERE id = $1`,
       if (paymentMethod === "cash") {
         changeBreakdown = await returnChange(
           client,
+          req.restaurantId,
           order.business_day_id,
           extra
         );
@@ -676,13 +808,14 @@ WHERE id = $1`,
       SET amount_paid = $1,
           due_amount = $2,
           is_paid = $3
-      WHERE id = $4
+      WHERE restaurant_id=$4 AND id = $5
       RETURNING *
       `,
       [
         finalAmountPaid,
         newDue,
         newDue === 0,
+        req.restaurantId,
         id
       ]
     );
@@ -695,20 +828,21 @@ if (paymentMethod === "cash" && receivedAmount > 0) {
   await client.query(
     `
     INSERT INTO cash_ledger
-    (business_day_id, type, reference_id, amount)
-    VALUES ($1, 'sale', $2, $3)
+    (restaurant_id,business_day_id, type, reference_id, amount)
+    VALUES ($1, $2, 'sale', $3, $4)
     `,
-    [order.business_day_id, order.id, receivedAmount]
+    [req.restaurantId,order.business_day_id, order.id, receivedAmount]
   );
 }
 
 await client.query(
 `
 INSERT INTO order_payments
-(order_id, payment_method, amount)
-VALUES ($1,$2,$3)
+(restaurant_id,order_id, payment_method, amount)
+VALUES ($1,$2,$3,$4)
 `,
 [
+  req.restaurantId,
 order.id,
 paymentMethod === "cash"
 ? "cash"
@@ -718,6 +852,33 @@ paymentMethod === "cash"
 receivedAmount
 ]
 );
+
+// 🔥 BANK CREDIT (for online/card payment of unpaid order)
+if (
+  (paymentMethod === "online" || paymentMethod === "card") &&
+  receivedAmount > 0
+) {
+  const bankRes = await client.query(
+    `SELECT id FROM bank_accounts WHERE restaurant_id=$1 LIMIT 1`,
+    [req.restaurantId]
+  );
+
+  const bankAccountId = bankRes.rows[0]?.id;
+
+  if (!bankAccountId) {
+    throw new Error("Bank account not configured");
+  }
+
+  await addBankTransaction(client, {
+    restaurantId: req.restaurantId,
+    bankAccountId,
+    amount: receivedAmount,
+    type: "credit",
+    source: "order",
+    referenceId: order.id,
+    description: "Unpaid order payment"
+  });
+}
 
     await client.query("COMMIT");
 
@@ -747,8 +908,8 @@ router.get("/:id", authenticate, async (req, res) => {
        customer_phone, payment_method, total,
        is_paid, amount_paid, due_amount, created_at
 FROM orders
-WHERE id = $1`,
-      [id]
+WHERE restaurant_id=$1 AND id = $2`,
+      [req.restaurantId,id]
     );
 
     if (orderRes.rows.length === 0) {
@@ -763,9 +924,9 @@ WHERE id = $1`,
   oi.quantity,
   oi.price_snapshot
 FROM order_items oi
-WHERE oi.order_id = $1
+WHERE oi.restaurant_id=$1 AND oi.order_id = $2
       `,
-      [id]
+      [req.restaurantId, id]
     );
 
     res.json({

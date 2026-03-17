@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 
 // Ensure uploads folder exists
-const uploadDir = "uploads";
+const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
@@ -13,8 +13,8 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    const uniqueName =
-      Date.now() + "-" + file.originalname.replace(/\s+/g, "_");
+    const ext = path.extname(file.originalname);
+const uniqueName = Date.now() + "-" + Math.random().toString(36).slice(2) + ext;
     cb(null, uniqueName);
   },
 });

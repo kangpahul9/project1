@@ -19,6 +19,13 @@ import cron from "node-cron";
 import { generateMonthlySalary } from "./jobs/salaryGenerator.js";
 import { sendWhatsAppTemplate } from "./services/whatsappService.js";
 import menuCategoriesRoutes from "./routes/menuCategories.js";
+import restaurantRoutes from "./routes/restaurant.js";
+import settingsRoutes from "./routes/settings.js";
+import { loadSettings } from "./middleware/loadSettings.js";
+import {attachBusinessDay} from "./middleware/attachBusinessDay.js";
+import partnersRoutes from "./routes/partners.js";
+import bankRoutes from "./routes/bank.js";
+import billingRoutes from "./routes/billing.js"
 
 
 
@@ -34,6 +41,8 @@ app.use(
     credentials: true,
   })
 );
+
+app.use("/billing", billingRoutes);
 
 
 app.use(express.json());
@@ -53,6 +62,10 @@ app.use("/auth", authRoutes);
 app.get("/protected", authenticate, (req, res) => {
   res.json({ message: "You are authenticated", user: req.user });
 });
+
+app.use(authenticate);
+app.use(loadSettings);
+app.use(attachBusinessDay)
 
 app.use("/menu", menuRoutes);
 
@@ -75,6 +88,15 @@ app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 app.use("/staff", staffRoutes);
 
 app.use("/menu/categories", menuCategoriesRoutes);
+
+app.use("/restaurant", restaurantRoutes);
+
+app.use("/settings", settingsRoutes);
+
+app.use("/partners", partnersRoutes);
+
+app.use("/bank", bankRoutes);
+
 
 // app.get("/dev/run-salary", async (req, res) => {
 //   try {

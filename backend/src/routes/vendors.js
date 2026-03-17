@@ -1,16 +1,23 @@
 import express from "express";
 import pool from "../config/db.js";
 import { authenticate, requireAdmin } from "../middleware/authMiddleware.js";
+import { addBankTransaction } from "../utils/bankLedger.js";
 
 const router = express.Router();
 
 /* ===============================
    GET ALL VENDORS
 ================================ */
+
+
+
 router.get("/", authenticate,async (req, res) => {
+  console.log(req.settings);
+  console.log("RestaurantID:", req.restaurantId);
+  
   try {
     const result = await pool.query(
-      "SELECT id, name, phone FROM vendors ORDER BY name ASC"
+      "SELECT id, name, phone FROM vendors WHERE restaurant_id=$1 ORDER BY name ASC",[req.restaurantId]
     );
     res.json(result.rows);
   } catch (err) {
@@ -31,8 +38,8 @@ router.post("/", authenticate, requireAdmin, async (req, res) => {
 
   try {
     const result = await pool.query(
-      "INSERT INTO vendors (name, phone, created_by) VALUES ($1, $2, $3) RETURNING *",
-      [name.trim(), phone || null, req.user.id]
+      "INSERT INTO vendors (restaurant_id,name, phone, created_by) VALUES ($1, $2, $3,$4) RETURNING *",
+      [req.restaurantId,name.trim(), phone || null, req.user.id]
     );
 
     res.status(201).json(result.rows[0]);
@@ -50,16 +57,22 @@ router.get("/summary", authenticate,requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
-        v.id,
-        v.name,
-        COALESCE(SUM(CASE WHEN e.is_paid = FALSE THEN e.amount END), 0) AS total_unpaid,
-        COALESCE(SUM(CASE WHEN e.is_paid = TRUE THEN e.amount_paid END), 0) AS total_paid,
-        COALESCE(SUM(e.amount), 0) AS lifetime_total
-      FROM vendors v
-      LEFT JOIN expenses e ON e.vendor_id = v.id
-      GROUP BY v.id
-      ORDER BY v.name ASC
-    `);
+  v.id,
+  v.name,
+  COALESCE(SUM(CASE WHEN e.is_paid = FALSE THEN e.amount END), 0) AS total_unpaid,
+  COALESCE(
+    SUM(CASE WHEN e.is_paid = TRUE THEN COALESCE(e.amount_paid,0) END),
+    0
+  ) AS total_paid,
+  COALESCE(SUM(e.amount), 0) AS lifetime_total
+FROM vendors v
+LEFT JOIN expenses e 
+  ON e.vendor_id = v.id 
+  AND e.restaurant_id = $1
+WHERE v.restaurant_id = $1
+GROUP BY v.id
+ORDER BY v.name ASC
+    `,[req.restaurantId]);
 
     res.json(result.rows);
   } catch (err) {
@@ -83,11 +96,11 @@ router.get("/:id/unpaid", authenticate,requireAdmin, async (req, res) => {
         e.created_at,
         u.name AS uploaded_by
       FROM expenses e
-      JOIN users u ON u.id = e.user_id
-      WHERE e.vendor_id = $1
+      LEFT JOIN users u ON u.id = e.user_id
+WHERE e.restaurant_id=$1 AND e.vendor_id = $2
       AND e.is_paid = FALSE
       ORDER BY e.created_at DESC
-    `, [id]);
+    `, [req.restaurantId,id]);
 
     res.json(result.rows);
   } catch (err) {
@@ -103,7 +116,7 @@ router.put("/:id/settle", authenticate, requireAdmin, async (req, res) => {
   const client = await pool.connect();
   const vendorId = parseInt(req.params.id);
 
-const { expenseIds, payment_method, final_amount, deduct_from_galla, denominations } = req.body;
+const { expenseIds, payment_method, final_amount, deduct_from_galla, denominations, partnerId } = req.body;
   if (!expenseIds || !Array.isArray(expenseIds) || expenseIds.length === 0) {
     return res.status(400).json({ message: "No expenses selected" });
   }
@@ -119,19 +132,24 @@ const { expenseIds, payment_method, final_amount, deduct_from_galla, denominatio
   try {
     await client.query("BEGIN");
 
+    const vendorCheck = await client.query(
+`
+SELECT id
+FROM vendors
+WHERE restaurant_id=$1 AND id=$2
+`,
+[req.restaurantId, vendorId]
+);
+
+if (!vendorCheck.rows.length) {
+  await client.query("ROLLBACK");
+  return res.status(404).json({ message: "Vendor not found" });
+}
+
     /* ===============================
        CHECK OPEN BUSINESS DAY
     =============================== */
-    const dayRes = await client.query(
-      "SELECT id FROM business_days WHERE is_closed = FALSE ORDER BY id DESC LIMIT 1"
-    );
-
-    if (dayRes.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ message: "No open business day" });
-    }
-
-    const businessDayId = dayRes.rows[0].id;
+  const businessDayId = req.businessDayId;
 
     /* ===============================
        VALIDATE EXPENSES
@@ -140,11 +158,11 @@ const { expenseIds, payment_method, final_amount, deduct_from_galla, denominatio
       `
       SELECT id, amount
       FROM expenses
-      WHERE id = ANY($1)
-      AND vendor_id = $2
+      WHERE restaurant_id=$1 AND id = ANY($2)
+      AND vendor_id = $3
       AND is_paid = FALSE
       `,
-      [expenseIds, vendorId]
+      [req.restaurantId,expenseIds, vendorId]
     );
 
     if (expensesRes.rows.length !== expenseIds.length) {
@@ -193,8 +211,9 @@ if (
   for (const [value, qty] of Object.entries(denominations)) {
     const denomRes = await client.query(
   `SELECT quantity FROM denominations
-   WHERE business_day_id = $1 AND note_value = $2`,
-  [businessDayId, value]
+   WHERE restaurant_id=$1 AND business_day_id = $2 AND note_value = $3
+   FOR UPDATE`,
+  [req.restaurantId,businessDayId, value]
 );
 
     if (denomRes.rows.length === 0 ||
@@ -209,8 +228,8 @@ if (
     await client.query(
       `UPDATE denominations
        SET quantity = quantity - $1
-       WHERE business_day_id = $2 AND note_value = $3`,
-      [qty, businessDayId, value]
+       WHERE restaurant_id=$2 AND business_day_id = $3 AND note_value = $4`,
+      [qty,req.restaurantId, businessDayId, value]
     );
   }
 
@@ -218,15 +237,25 @@ if (
   const withdrawalRes = await client.query(
     `
     INSERT INTO cash_withdrawals
-    (business_day_id, amount, reason)
-    VALUES ($1, $2, $3)
-    RETURNING id
+(
+ restaurant_id,
+ business_day_id,
+ amount,
+ user_id,
+ partner_id,
+ reason
+)
+VALUES ($1,$2,$3,$4,$5,$6)
+RETURNING id
     `,
     [
-      businessDayId,
-      final_amount,
-      'Supplier Payment'
-    ]
+ req.restaurantId,
+ businessDayId,
+ final_amount,
+ partnerId ? null : req.user.id,
+ partnerId || null,
+ 'Supplier Payment'
+]
   );
 
   withdrawalId = withdrawalRes.rows[0].id;
@@ -237,6 +266,7 @@ if (
     const settlementRes = await client.query(
       `
       INSERT INTO vendor_settlements (
+        restaurant_id,
         vendor_id,
         business_day_id,
         total_due,
@@ -245,10 +275,11 @@ if (
         withdrawal_id,
         created_by
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
       RETURNING id
       `,
       [
+        req.restaurantId,
         vendorId,
         businessDayId,
         totalDue,
@@ -260,6 +291,31 @@ if (
     );
 
     const settlementId = settlementRes.rows[0].id;
+
+    // 🔥 BANK LEDGER (ONLY ONLINE/CARD)
+if (["online", "card"].includes(payment_method)) {
+
+  const bankRes = await client.query(
+    `SELECT id FROM bank_accounts WHERE restaurant_id=$1 LIMIT 1`,
+    [req.restaurantId]
+  );
+
+  const bankAccountId = bankRes.rows[0]?.id;
+
+  if (!bankAccountId) {
+    throw new Error("Bank account not configured");
+  }
+
+  await addBankTransaction(client, {
+    restaurantId: req.restaurantId,
+    bankAccountId,
+    amount: final_amount,
+    type: "debit",
+    source: "vendor_settlement",
+    referenceId: settlementId,
+    description: "Vendor settlement"
+  });
+}
 
     /* ===============================
        PROPORTIONAL DISTRIBUTION
@@ -280,13 +336,14 @@ const proportionalPaid = Math.round(
           paid_at = NOW(),
           paid_by = $3,
           settlement_id = $4
-        WHERE id = $5
+        WHERE restaurant_id=$5 AND id = $6
         `,
         [
           proportionalPaid,
           payment_method,
           req.user.id,
           settlementId,
+          req.restaurantId,
           expense.id,
         ]
       );
@@ -312,6 +369,13 @@ const proportionalPaid = Math.round(
 });
 
 router.get("/:id/settlements", authenticate, requireAdmin,async (req, res) => {
+
+  if (!req.settings.enable_vendor_ledger) {
+  return res.status(403).json({
+    message: "Vendor ledger disabled"
+  });
+}
+
   try {
     const { id } = req.params;
 
@@ -325,11 +389,11 @@ router.get("/:id/settlements", authenticate, requireAdmin,async (req, res) => {
         vs.created_at,
         u.name AS created_by
       FROM vendor_settlements vs
-      JOIN users u ON u.id = vs.created_by
-      WHERE vs.vendor_id = $1
+      JOIN users u ON u.id = vs.created_by AND u.restaurant_id=$1
+      WHERE vs.vendor_id = $2 AND vs.restaurant_id=$1
       ORDER BY vs.created_at DESC
       `,
-      [id]
+      [req.restaurantId,id]
     );
 
     res.json(result.rows);

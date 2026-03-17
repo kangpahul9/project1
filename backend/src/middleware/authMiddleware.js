@@ -3,13 +3,12 @@ import jwt from "jsonwebtoken";
 export const authenticate = (req, res, next) => {
   let token = null;
 
-  // 1️⃣ Try Authorization header
   const authHeader = req.headers.authorization;
+
   if (authHeader && authHeader.startsWith("Bearer ")) {
     token = authHeader.split(" ")[1];
   }
 
-  // 2️⃣ Fallback to query token (for CSV export)
   if (!token && req.query.token) {
     token = req.query.token;
   }
@@ -20,9 +19,13 @@ export const authenticate = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
     req.user = decoded;
+    req.userId = decoded.id;
+    req.restaurantId = decoded.restaurantId;
+
     next();
-  } catch (err) {
+  } catch {
     return res.status(401).json({ message: "Invalid token" });
   }
 };

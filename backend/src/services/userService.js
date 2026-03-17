@@ -1,9 +1,16 @@
-import pool from "../config/db.js";
+import db from "../config/db.js";
 
-export const findUserByPin = async (pin) => {
-  const result = await pool.query(
-    "SELECT * FROM users WHERE pin = $1",
-    [pin]
+export async function findUserByEmail(restaurantUid, email) {
+  const result = await db.query(
+    `
+    SELECT u.*
+    FROM users u
+    JOIN restaurants r ON r.id = u.restaurant_id
+    WHERE r.restaurant_uid = $1
+    AND u.email = $2
+    `,
+    [restaurantUid, email]
   );
+
   return result.rows[0];
-};
+}

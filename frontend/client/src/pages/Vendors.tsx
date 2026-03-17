@@ -12,6 +12,14 @@ import { Input } from "@/components/ui/input";
 import { useState } from "react";
 import { useEffect } from "react";
 import { DenominationSelector } from "@/components/DenominationSelector";
+import {
+  Select,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  SelectContent
+} from "@/components/ui/select";import { usePartners } from "@/hooks/use-partners";
+
 
 export default function Vendors() {
   const { data: vendors, isLoading } = useVendorSummary();
@@ -20,7 +28,10 @@ export default function Vendors() {
   const [selectedVendor, setSelectedVendor] = useState<any>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const { data: partners } = usePartners();
+const [partnerId, setPartnerId] = useState<number | null>(null);
 
+  
   const { data: unpaid } = useVendorUnpaid(selectedVendor?.id);
   const { mutate: settleVendor } = useSettleVendor(selectedVendor?.id);
   const { data: settlements } = useVendorSettlements(selectedVendor?.id);
@@ -66,6 +77,9 @@ const handleCreate = () => {
   );
 };
 
+console.log("selectedVendor", selectedVendor);
+console.log("unpaid expenses", unpaid);
+
   const toggleExpense = (id: number) => {
     setSelectedExpenses((prev) =>
       prev.includes(id)
@@ -88,6 +102,13 @@ useEffect(() => {
     setFinalAmount(denomTotal);
   }
 }, [selectedNotes, paymentMethod, deductFromGalla]);
+
+
+useEffect(() => {
+  if (paymentMethod === "cash" && deductFromGalla) {
+    setPartnerId(null);
+  }
+}, [paymentMethod, deductFromGalla]);
 
   return (
     <div className="flex bg-gray-50 min-h-screen">
@@ -178,6 +199,8 @@ useEffect(() => {
   </div>
 ))}
 
+
+
             {/* SETTLEMENT SECTION */}
             {selectedExpenses.length > 0 && (
   <div className="mt-6 border p-6 rounded bg-white space-y-4">
@@ -192,6 +215,32 @@ useEffect(() => {
   disabled={paymentMethod === "cash" && deductFromGalla}
   onChange={(e) => setFinalAmount(Number(e.target.value))}
 />
+
+{!(paymentMethod === "cash" && deductFromGalla) && (
+  <div>
+    <label className="text-sm font-medium">Paid By</label>
+
+    <Select
+      value={partnerId ? String(partnerId) : "staff"}
+      onValueChange={(value) => {
+        if (value === "staff") setPartnerId(null);
+        else setPartnerId(Number(value));
+      }}
+    >
+      <SelectTrigger>
+        <SelectValue placeholder="Select payer" />
+      </SelectTrigger>
+
+      <SelectContent>
+        {partners?.map((p: any) => (
+          <SelectItem key={p.id} value={String(p.id)}>
+            {p.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  </div>
+)}
 
     <select
       value={paymentMethod}
@@ -256,6 +305,7 @@ useEffect(() => {
   payment_method: paymentMethod,
   final_amount: finalAmount,
   deduct_from_galla: deductFromGalla,
+  partnerId,
   ...(paymentMethod === "cash" && deductFromGalla && {
     denominations: denominationObject
   })
@@ -264,6 +314,7 @@ useEffect(() => {
   setSelectedExpenses([]);
   setFinalAmount(0);
   setDeductFromGalla(false);
+  setPartnerId(null);
   setSelectedNotes(DENOMS.map(d => ({ note: d, qty: 0 })));
 }}
 >

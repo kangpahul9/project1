@@ -11,7 +11,9 @@ import {
   BarChart3,
   Menu,
   X,
-  CalendarDays
+  CalendarDays,
+  Currency,
+  Settings
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -29,9 +31,14 @@ const NAV_ITEMS = [
 
   { label: "Vendors", href: "/vendors", icon: ShoppingBag, roles: ["ADMIN"] },
 
+  { label: "Partners", href: "/partners-ledger", icon: Currency, roles: ["ADMIN"] },
+
   { label: "Staff", href: "/staff", icon: Users, roles: ["ADMIN"] },
 
   { label: "Roster", href: "/roster", icon: CalendarDays, roles: ["ADMIN", "STAFF"] },
+
+  { label: "Settings", href: "/settings", icon: Settings, roles: ["ADMIN"] },
+
 ];
 
 export function Sidebar() {

@@ -14,9 +14,10 @@ function getAuthHeaders() {
 /* =============================
    GET CURRENT BUSINESS DAY
 ============================= */
-export function useCurrentBusinessDay() {
+export function useCurrentBusinessDay(useBusinessDay: boolean) {
   return useQuery({
     queryKey: ["/business-days/current"],
+    enabled: useBusinessDay, // 🚨 important
     queryFn: async () => {
       const res = await fetch(`${API_BASE}/business-days/current`, {
         headers: getAuthHeaders(),
@@ -110,9 +111,10 @@ export function useCloseBusinessDay() {
   });
 }
 
-export function useExpectedCash() {
+export function useExpectedCash(useBusinessDay: boolean = false) {
   return useQuery({
     queryKey: ["/business-days/expected-cash"],
+    enabled: !!useBusinessDay, // force boolean
     queryFn: async () => {
       const res = await fetch(`${API_BASE}/business-days/expected-cash`, {
         headers: getAuthHeaders(),
@@ -123,4 +125,4 @@ export function useExpectedCash() {
       return await res.json();
     },
   });
-}
+} 

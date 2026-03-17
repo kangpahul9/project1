@@ -47,6 +47,7 @@ export function useCreateExpense() {
       queryClient.invalidateQueries({ queryKey: ["staff-balance"] });
       queryClient.invalidateQueries({ queryKey: ["staff-history"] });
   queryClient.invalidateQueries({ queryKey: ["staff-summary"] });
+  queryClient.invalidateQueries({ queryKey: ["vendors-summary"] });
       toast({
         title: "Success",
         description: "Expense recorded successfully",
@@ -107,6 +108,7 @@ export function useUpdateExpense() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["vendors-summary"] });
       toast({ title: "Expense updated" });
     },
   });
@@ -127,6 +129,7 @@ export function useDeleteExpense() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["vendors-summary"] });
       toast({ title: "Expense deleted" });
     },
   });

@@ -18,6 +18,10 @@ import Reports from "@/pages/Reports";
 import PrintBill from "@/pages/PrintBill";
 import WithdrawalHistory from "@/pages/withdrawals-history";
 import Roster from "@/pages/Roster";
+import Settings from "@/pages/Settings";
+import PartnerLedger from "@/pages/partners-ledger";
+import PartnerHistory from "./pages/partner-history";
+import BankHistory from "./pages/BankHistory";
 
 
 
@@ -91,6 +95,25 @@ function Router() {
       <Route path="/roster">
         <ProtectedRoute component={Roster} />
       </Route>
+
+      <Route path="/settings">
+        <ProtectedRoute component={Settings} />
+      </Route>
+
+      
+
+      <Route path="/partners/:id/ledger">
+  <ProtectedRoute component={PartnerHistory} />
+</Route>
+
+<Route path="/partners-ledger">
+        <ProtectedRoute component={PartnerLedger} />
+      </Route>
+
+      <Route path="/bank-history">
+        <ProtectedRoute component={BankHistory} />
+      </Route>
+
 
       <Route component={NotFound} />
     </Switch>

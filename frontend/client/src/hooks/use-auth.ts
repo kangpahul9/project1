@@ -38,34 +38,39 @@ export function useLogin() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (credentials: { pin: string }) => {
-      const res = await fetch(withApiBase("/auth/login"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credentials),
-      });
+    mutationFn: async (credentials: {
+  restaurantUid: string;
+  email: string;
+  password: string;
+}) => {
+  localStorage.removeItem("token");
+sessionStorage.clear();
+  const res = await fetch(withApiBase("/auth/login"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(credentials),
+  });
 
-      if (!res.ok) {
-        if (res.status === 401) throw new Error("Invalid PIN code");
-        throw new Error("Login failed");
-      }
+  if (!res.ok) {
+    if (res.status === 401) throw new Error("Invalid credentials");
+    throw new Error("Login failed");
+  }
 
-      const data = await res.json();
+  const data = await res.json();
 
-      // Store JWT
-      localStorage.setItem("token", data.token);
+  localStorage.setItem("token", data.token);
 
-      // Return user in correct shape
-      return {
-        id: data.userId,
-        name: data.name,
-        role: data.role,
-      };
-    },
+  return {
+    id: data.userId,
+    name: data.name,
+    role: data.role,
+  };
+},
 
     onSuccess: (user) => {
       login(user);                // Save to Zustand
-      setLocation("/dashboard");  // Redirect
+      window.location.href = "/dashboard";  // Redirect
+      
       toast({
         title: "Welcome back!",
         description: `Logged in as ${user.name}`,

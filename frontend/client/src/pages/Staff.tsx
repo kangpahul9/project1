@@ -13,7 +13,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useState } from "react";
+import { useState,useEffect } from "react";
 import { useCurrentBusinessDay } from "@/hooks/use-business-days";
 import { DenominationSelector } from "@/components/DenominationSelector";
 import { StatCard } from "@/components/StatCard";
@@ -23,6 +23,13 @@ import {
   AlertTriangle,
   TrendingUp
 } from "lucide-react";
+import {
+  Select,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  SelectContent
+} from "@/components/ui/select";import { usePartners } from "@/hooks/use-partners";
 
 
 
@@ -33,6 +40,8 @@ export default function Staff() {
   const { mutate: addTransaction } = useStaffTransaction();
   const { data: summary } = useStaffSummary();
   const { mutate: updateStaff } = useUpdateStaff();
+  const { data: partners } = usePartners();
+const [partnerId, setPartnerId] = useState<number | null>(null);
 const { mutate: deactivateStaff } = useDeactivateStaff();
 
 const [selectedStaff, setSelectedStaff] = useState<StaffType | null>(null);
@@ -96,6 +105,12 @@ const openEditModal = (member: StaffType) => {
   });
   setEditOpen(true);
 };
+
+useEffect(() => {
+  if (paymentMethod === "cash" && deductFromGalla) {
+    setPartnerId(null);
+  }
+}, [paymentMethod, deductFromGalla]);
 
   return (
     <div className="flex bg-gray-50 min-h-screen">
@@ -325,6 +340,35 @@ const openEditModal = (member: StaffType) => {
     <option value="payment">Payment (You Pay Staff)</option>
     <option value="adjustment">Adjustment (Manual Correction)</option>
   </select>
+        
+
+        {!(paymentMethod === "cash" && deductFromGalla) && (
+  <div>
+    <label className="text-sm font-medium">Paid By</label>
+    
+
+    <Select
+      value={partnerId ? String(partnerId) : "staff"}
+      onValueChange={(value) => {
+        if (value === "staff") setPartnerId(null);
+        else setPartnerId(Number(value));
+      }}
+    >
+      <SelectTrigger>
+        <SelectValue placeholder="Select payer" />
+      </SelectTrigger>
+
+      <SelectContent>
+
+        {partners?.map((p: any) => (
+          <SelectItem key={p.id} value={String(p.id)}>
+            {p.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  </div>
+)}
 
   <select
     value={paymentMethod}
@@ -337,6 +381,7 @@ const openEditModal = (member: StaffType) => {
     {/* <option value="card">Card</option> */}
     <option value="online">Online</option>
   </select>
+  
 
   {paymentMethod === "cash" && (
     <div className="flex items-center gap-2">
@@ -393,12 +438,13 @@ const openEditModal = (member: StaffType) => {
   type,
   reason,
   payment_method: paymentMethod,
+  partnerId,
   deduct_from_galla: deductFromGalla,
   denominations:
     paymentMethod === "cash" && deductFromGalla
       ? denominationObject
       : undefined,
-  businessDayId: currentDay?.id,
+  businessDayId: currentDay?.id || null,
 },
         {
           onSuccess: () => {

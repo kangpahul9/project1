@@ -19,7 +19,7 @@ const salesRes = await pool.query(
   `
   SELECT
   COUNT(DISTINCT o.id) as total_orders,
-  SUM(o.total) as total_sales,
+  SUM(DISTINCT o.total) as total_sales,
   SUM(CASE WHEN o.is_paid = true THEN 1 ELSE 0 END) as paid_orders,
   SUM(CASE WHEN o.is_paid = false THEN 1 ELSE 0 END) as unpaid_orders,
 
@@ -32,11 +32,11 @@ const salesRes = await pool.query(
 
 FROM orders o
 LEFT JOIN order_payments op
-ON op.order_id = o.id
+ON op.order_id = o.id AND op.restaurant_id=$1
 
-WHERE o.created_at >= $1::date
-AND o.created_at < ($1::date + INTERVAL '1 day');`,
-  [date]
+WHERE o.restaurant_id=$1 AND o.created_at >= $2::date 
+AND o.created_at < ($2::date + INTERVAL '1 day');`,
+  [req.restaurantId,date]
 );
 
     const row = salesRes.rows[0];
@@ -66,10 +66,10 @@ router.get("/weekly", authenticate,requireAdmin, async (req, res) => {
   TO_CHAR(created_at, 'DD Mon') as date,
   SUM(total) as total_sales
 FROM orders
-WHERE created_at >= NOW() - INTERVAL '7 days'
+WHERE restaurant_id=$1 AND created_at >= NOW() - INTERVAL '7 days'
 GROUP BY DATE(created_at), TO_CHAR(created_at, 'DD Mon')
 ORDER BY DATE(created_at)
-    `);
+    `,[req.restaurantId]);
 
     res.json(result.rows);
   } catch (err) {
@@ -84,7 +84,7 @@ router.get("/weekly-summary", authenticate, requireAdmin,async (req, res) => {
     const currentWeek = await pool.query(`
      SELECT
 COUNT(DISTINCT o.id) as total_orders,
-SUM(o.total) as total_sales,
+SUM(DISTINCT o.total) as total_sales,
 SUM(CASE WHEN o.is_paid = true THEN 1 ELSE 0 END) as paid_orders,
 SUM(CASE WHEN o.is_paid = false THEN 1 ELSE 0 END) as unpaid_orders,
 
@@ -96,19 +96,19 @@ SUM(CASE WHEN o.payment_method = 'unpaid' THEN o.total ELSE 0 END) as total_cred
 SUM(o.due_amount) as total_outstanding
 
 FROM orders o
-LEFT JOIN order_payments op
-ON op.order_id = o.id
+LEFT JOIN order_payments op 
+ON op.order_id = o.id AND op.restaurant_id=$1
 
-WHERE o.created_at >= NOW() - INTERVAL '7 days'
-    `);
+WHERE o.restaurant_id=$1 AND o.created_at >= NOW() - INTERVAL '7 days'
+    `,[req.restaurantId]);
 
     // Previous week
     const previousWeek = await pool.query(`
       SELECT COALESCE(SUM(total),0) as total_sales
       FROM orders
-      WHERE created_at >= NOW() - INTERVAL '14 days'
+      WHERE restaurant_id=$1 AND created_at >= NOW() - INTERVAL '14 days'
       AND created_at < NOW() - INTERVAL '7 days'
-    `);
+    `,[req.restaurantId]);
 
     const row = currentWeek.rows[0];
     const currentSales = Number(row.total_sales || 0);
@@ -149,10 +149,10 @@ router.get("/monthly", authenticate,requireAdmin, async (req, res) => {
   TO_CHAR(created_at, 'DD Mon') as date,
   SUM(total) as total_sales
 FROM orders
-WHERE created_at >= NOW() - INTERVAL '30 days'
+WHERE restaurant_id=$1 AND created_at >= NOW() - INTERVAL '30 days'
 GROUP BY DATE(created_at), TO_CHAR(created_at, 'DD Mon')
 ORDER BY DATE(created_at)
-    `);
+    `,[req.restaurantId]);
 
     res.json(result.rows);
   } catch (err) {
@@ -167,7 +167,7 @@ router.get("/monthly-summary", authenticate,requireAdmin, async (req, res) => {
     const currentMonth = await pool.query(`
      SELECT
 COUNT(DISTINCT o.id) as total_orders,
-SUM(o.total) as total_sales,
+SUM(DISTINCT o.total) as total_sales,
 SUM(CASE WHEN o.is_paid = true THEN 1 ELSE 0 END) as paid_orders,
 SUM(CASE WHEN o.is_paid = false THEN 1 ELSE 0 END) as unpaid_orders,
 
@@ -180,18 +180,18 @@ SUM(o.due_amount) as total_outstanding
 
 FROM orders o
 LEFT JOIN order_payments op
-ON op.order_id = o.id
+ON op.order_id = o.id AND op.restaurant_id=$1
 
 WHERE o.created_at >= NOW() - INTERVAL '30 days'
-    `);
+    `,[req.restaurantId]);
 
     // Previous month (30–60 days ago)
     const previousMonth = await pool.query(`
       SELECT COALESCE(SUM(total),0) as total_sales
       FROM orders
-      WHERE created_at >= NOW() - INTERVAL '60 days'
+      WHERE restaurant_id=$1 AND created_at >= NOW() - INTERVAL '60 days'
       AND created_at < NOW() - INTERVAL '30 days'
-    `);
+    `,[req.restaurantId]);
 
     const row = currentMonth.rows[0];
     const currentSales = Number(row.total_sales || 0);
@@ -224,29 +224,41 @@ WHERE o.created_at >= NOW() - INTERVAL '30 days'
 });
 
 router.get("/export", authenticate,requireAdmin, async (req, res) => {
+
+
   try {
     const { type } = req.query; // daily | weekly | monthly
 
     let query = "";
     let filename = "report.csv";
 
-    if (type === "daily") {
-      filename = "daily_report.csv";
+   let params = [];
 
-      query = `
-        SELECT 
-          id,
-          bill_number,
-          customer_name,
-          payment_method,
-          total,
-          amount_paid,
-          due_amount,
-          created_at
-        FROM orders
-        ORDER BY created_at DESC
-      `;
-    }
+  if (!type) {
+  return res.status(400).json({ message: "type required (daily | weekly | monthly)" });
+}
+
+if (type === "daily") {
+
+query = `
+SELECT
+id,
+bill_number,
+customer_name,
+payment_method,
+total,
+amount_paid,
+due_amount,
+created_at
+FROM orders
+WHERE restaurant_id=$1
+ORDER BY created_at DESC
+`;
+
+params = [req.restaurantId];
+
+}
+
 
     if (type === "weekly") {
       filename = "weekly_report.csv";
@@ -257,10 +269,10 @@ router.get("/export", authenticate,requireAdmin, async (req, res) => {
           COUNT(*) as total_orders,
           SUM(total) as total_sales
         FROM orders
-        WHERE created_at >= NOW() - INTERVAL '7 days'
+        WHERE restaurant_id=$1 AND created_at >= NOW() - INTERVAL '7 days'
         GROUP BY DATE(created_at)
         ORDER BY DATE(created_at)
-      `;
+      `;params = [req.restaurantId]
     }
 
     if (type === "monthly") {
@@ -272,13 +284,13 @@ router.get("/export", authenticate,requireAdmin, async (req, res) => {
           COUNT(*) as total_orders,
           SUM(total) as total_sales
         FROM orders
-        WHERE created_at >= NOW() - INTERVAL '30 days'
+        WHERE restaurant_id=$1 AND created_at >= NOW() - INTERVAL '30 days'
         GROUP BY DATE(created_at)
         ORDER BY DATE(created_at)
-      `;
+      `;params=[req.restaurantId];
     }
 
-    const result = await pool.query(query);
+const result = await pool.query(query, params);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: "No data found" });

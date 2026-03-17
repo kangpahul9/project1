@@ -10,9 +10,9 @@ router.get("/", authenticate, async (req, res) => {
     const result = await pool.query(`
       SELECT *
       FROM menu_categories
-      WHERE is_active = TRUE
+      WHERE restaurant_id=$1 AND is_active = TRUE
       ORDER BY sort_order
-    `);
+    `,[req.restaurantId]);
 
     res.json(result.rows);
 
@@ -31,26 +31,33 @@ router.post("/", authenticate, requireAdmin, async (req, res) => {
   }
 
   try {
+    const order = Math.max(0, sort_order || 0);
 
     const result = await pool.query(
       `
-      INSERT INTO menu_categories (name, color, sort_order)
-      VALUES ($1,$2,$3)
+      INSERT INTO menu_categories (restaurant_id,name, color, sort_order)
+      VALUES ($1,$2,$3,$4)
       RETURNING *
       `,
       [
+        req.restaurantId,
         name,
         color || "#6366F1",
-        sort_order || 0
+        order
       ]
     );
 
     res.status(201).json(result.rows[0]);
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to create category" });
+
+  if (err.code === "23505") {
+    return res.status(400).json({ message: "Category already exists" });
   }
+
+  console.error(err);
+  res.status(500).json({ message: "Failed to create category" });
+}
 
 });
 
@@ -72,13 +79,16 @@ router.put("/:id", authenticate, requireAdmin, async (req, res) => {
           color=$2,
           sort_order=$3,
           is_active=$4
-      WHERE id=$5
+      WHERE restaurant_id=$5 AND id=$6
       RETURNING *
       `,
-      [name, color, sort_order, is_active, id]
+      [name, color, sort_order, is_active,req.restaurantId, id]
     );
 
-    res.json(result.rows[0]);
+    if (result.rows.length === 0) {
+  return res.status(404).json({ message: "Category not found" });
+}
+res.json(result.rows[0]);
 
   } catch (err) {
     console.error(err);
@@ -93,16 +103,21 @@ router.delete("/:id", authenticate, requireAdmin, async (req, res) => {
 
   try {
 
-    await pool.query(
-      `
-      UPDATE menu_categories
-      SET is_active = FALSE
-      WHERE id = $1
-      `,
-      [id]
-    );
+   const result = await pool.query(
+`
+UPDATE menu_categories
+SET is_active = FALSE
+WHERE restaurant_id=$1 AND id=$2
+RETURNING id
+`,
+[req.restaurantId, id]
+);
 
-    res.json({ message: "Category disabled" });
+if (result.rowCount === 0) {
+  return res.status(404).json({ message: "Category not found" });
+}
+
+res.json({ message: "Category disabled" });
 
   } catch (err) {
     console.error(err);

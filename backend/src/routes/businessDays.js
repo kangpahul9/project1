@@ -12,7 +12,15 @@ const router = express.Router();
 router.get("/current", authenticate, async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT * FROM business_days WHERE is_closed = false ORDER BY id DESC LIMIT 1"
+      `
+      SELECT *
+      FROM business_days
+      WHERE restaurant_id = $1
+      AND is_closed = false
+      ORDER BY id DESC
+      LIMIT 1
+      `,
+      [req.restaurantId]
     );
 
     if (result.rows.length === 0) {
@@ -32,7 +40,15 @@ router.get("/current", authenticate, async (req, res) => {
 router.get("/expected-cash", authenticate, async (req, res) => {
   try {
     const dayResult = await pool.query(
-      "SELECT id FROM business_days WHERE is_closed = false ORDER BY id DESC LIMIT 1"
+      `
+  SELECT id
+  FROM business_days
+  WHERE restaurant_id = $1
+  AND is_closed = false
+  ORDER BY id DESC
+  LIMIT 1
+  `,
+  [req.restaurantId]
     );
 
     if (dayResult.rows.length === 0) {
@@ -45,9 +61,9 @@ router.get("/expected-cash", authenticate, async (req, res) => {
       `
       SELECT COALESCE(SUM(amount),0) AS total
       FROM cash_ledger
-      WHERE business_day_id = $1
+      WHERE restaurant_id = $1 AND business_day_id = $2
       `,
-      [businessDayId]
+      [req.restaurantId, businessDayId]
     );
 
     res.json({
@@ -78,7 +94,8 @@ router.post("/start", authenticate, async (req, res) => {
 
     // 1️⃣ Check no open day exists
     const existing = await client.query(
-      "SELECT id FROM business_days WHERE is_closed = false LIMIT 1"
+      "SELECT id FROM business_days WHERE restaurant_id = $1 AND is_closed = false LIMIT 1",
+      [req.restaurantId]
     );
 
     if (existing.rows.length > 0) {
@@ -100,11 +117,11 @@ router.post("/start", authenticate, async (req, res) => {
     // 3️⃣ Create new business day with opening cash
     const dayResult = await client.query(
       `
-      INSERT INTO business_days (date, is_closed, opening_cash)
-      VALUES (CURRENT_DATE, false, $1)
+      INSERT INTO business_days (restaurant_id, date, is_closed, opening_cash)
+VALUES ($1, CURRENT_DATE, false, $2)
       RETURNING *
       `,
-      [openingCash]
+      [req.restaurantId, openingCash]
     );
 
 
@@ -119,25 +136,25 @@ router.post("/start", authenticate, async (req, res) => {
 
       await client.query(
         `
-        INSERT INTO denominations (business_day_id, note_value, quantity)
-        VALUES ($1, $2, $3)
+        INSERT INTO denominations (restaurant_id, business_day_id, note_value, quantity)
+        VALUES ($1, $2, $3, $4)
         `,
-        [businessDay.id, note, qty]
+        [req.restaurantId, businessDay.id, note, qty]
       );
     }
 
     // 5️⃣ Insert opening entry into ledger
     await client.query(
       `
-      INSERT INTO cash_ledger (business_day_id, type, amount)
-      VALUES ($1, 'opening', $2)
+      INSERT INTO cash_ledger (restaurant_id, business_day_id, type, amount)
+      VALUES ($1, $2, 'opening', $3)
       `,
-      [businessDay.id, openingCash]
+      [req.restaurantId, businessDay.id, openingCash]
     );
 
     const userRes = await client.query(
-  "SELECT name FROM users WHERE id = $1",
-  [req.user.id]
+  "SELECT name FROM users WHERE restaurant_id=$1 AND id = $2",
+  [req.restaurantId, req.user.id]
 );
     await client.query("COMMIT");
 
@@ -188,7 +205,8 @@ router.post("/close", authenticate, async (req, res) => {
 
     // 1️⃣ Get current open business day
     const dayResult = await client.query(
-      "SELECT * FROM business_days WHERE is_closed = false ORDER BY id DESC LIMIT 1"
+      "SELECT * FROM business_days WHERE restaurant_id = $1 AND is_closed = false ORDER BY id DESC LIMIT 1",
+      [req.restaurantId]
     );
 
     if (dayResult.rows.length === 0) {
@@ -209,9 +227,9 @@ const systemDenomsRes = await client.query(
   `
   SELECT note_value, quantity
   FROM denominations
-  WHERE business_day_id = $1
+  WHERE restaurant_id = $1 AND business_day_id = $2
   `,
-  [businessDay.id]
+  [req.restaurantId, businessDay.id]
 );
 
 // Convert DB denominations into map
@@ -259,9 +277,9 @@ const systemCash = Object.entries(systemMap).reduce(
       `
       SELECT COALESCE(SUM(amount),0) AS total
       FROM cash_ledger
-      WHERE business_day_id = $1
+      WHERE restaurant_id = $1 AND business_day_id = $2
       `,
-      [businessDay.id]
+      [req.restaurantId, businessDay.id]
     );
 
     const expectedCash = Number(ledgerResult.rows[0].total);
@@ -286,16 +304,16 @@ const systemCash = Object.entries(systemMap).reduce(
       await client.query(
         `
         INSERT INTO cash_ledger
-        (business_day_id, type, amount)
-        VALUES ($1, 'closing_adjustment', $2)
+        (restaurant_id, business_day_id, type, amount)
+        VALUES ($1, $2, 'closing_adjustment', $3)
         `,
-        [businessDay.id, difference]
+        [req.restaurantId, businessDay.id, difference]
       );
 
       // Get closing user name for email
       const userRes = await client.query(
-        "SELECT name FROM users WHERE id = $1",
-        [req.user.id]
+        "SELECT name FROM users WHERE restaurant_id = $1 AND id = $2",
+        [req.restaurantId, req.user.id]
       );
 
       emailPayload = {
@@ -320,7 +338,7 @@ const systemCash = Object.entries(systemMap).reduce(
           closing_difference = $3,
           closing_reason = $4,
           has_discrepancy = $5
-      WHERE id = $6
+      WHERE id = $6 AND restaurant_id = $7
       `,
       [
         total,
@@ -328,49 +346,50 @@ const systemCash = Object.entries(systemMap).reduce(
         difference,
         closingReason,
         hasDiscrepancy,
-        businessDay.id
+        businessDay.id,
+        req.restaurantId
       ]
     );
 
     const userRes = await client.query(
-  "SELECT name FROM users WHERE id = $1",
-  [req.user.id]
+  "SELECT name FROM users WHERE restaurant_id = $1 AND id = $2",
+  [req.restaurantId, req.user.id]
 );
     await client.query("COMMIT");
 // CASH SALES
-const cashSalesRes = await pool.query(
+const cashSalesRes = await client.query(
   `
   SELECT COALESCE(SUM(amount),0) AS total
   FROM cash_ledger
-  WHERE business_day_id = $1
+  WHERE restaurant_id = $1 AND business_day_id = $2
   AND type = 'sale'
   `,
-  [businessDay.id]
+  [req.restaurantId, businessDay.id]
 );
 
 const cashSales = Number(cashSalesRes.rows[0].total);
 
 // UPI SALES
-const upiSalesRes = await pool.query(
+const upiSalesRes = await client.query(
   `
   SELECT COALESCE(SUM(total),0) AS total
   FROM orders
-  WHERE business_day_id = $1
+  WHERE restaurant_id = $1 AND business_day_id = $2
   AND payment_method = 'online'
   `,
-  [businessDay.id]
+  [req.restaurantId, businessDay.id]
 );
 
 const upiSales = Number(upiSalesRes.rows[0].total);
 
 // EXPENSES
-const expensesRes = await pool.query(
+const expensesRes = await client.query(
   `
   SELECT COALESCE(SUM(amount),0) AS total
   FROM expenses
-  WHERE business_day_id = $1
+  WHERE restaurant_id = $1 AND business_day_id = $2
   `,
-  [businessDay.id]
+  [req.restaurantId, businessDay.id]
 );
 
 const expenses = Number(expensesRes.rows[0].total);

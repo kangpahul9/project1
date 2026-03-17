@@ -3,7 +3,7 @@ import pool from "../config/db.js";
 export const generateMonthlySalary = async () => {
   try {
     const staffRes = await pool.query(`
-      SELECT id, salary, joining_date
+      SELECT id, salary, joining_date, restaurant_id
       FROM staff
       WHERE is_active = TRUE
     `);
@@ -31,22 +31,23 @@ export const generateMonthlySalary = async () => {
       const check = await pool.query(
         `
         SELECT id
-        FROM staff_transactions
-        WHERE staff_id = $1
-        AND salary_month = $2
+FROM staff_transactions
+WHERE restaurant_id=$1
+AND staff_id=$2
+AND salary_month=$3
         `,
-        [staff.id, monthStart]
+        [staff.restaurant_id, staff.id, monthStart]
       );
 
       if (check.rows.length > 0) continue;
 
       await pool.query(
         `
-        INSERT INTO staff_transactions
-        (staff_id, amount, type, reason, salary_month)
-        VALUES ($1,$2,'adjustment',$3,$4)
+        INSERT INTO staff_transactions 
+        (restaurant_id,staff_id, amount, type, reason, salary_month)
+        VALUES ($1,$2,$3,'adjustment',$4,$5)
         `,
-        [staff.id, staff.salary, reason, monthStart]
+        [staff.restaurant_id,staff.id, staff.salary, reason, monthStart]
       );
     }
 

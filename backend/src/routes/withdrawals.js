@@ -1,6 +1,7 @@
 import express from "express";
 import pool from "../config/db.js";
 import { authenticate,requireAdmin } from "../middleware/authMiddleware.js";
+import { getBusinessDay } from "../utils/getBusinessDay.js";
 
 const router = express.Router();
 
@@ -31,13 +32,17 @@ const EXPENSE_REASONS = [
 /* =========================================
    OWNER CASH WITHDRAWAL
 ========================================= */
+
 router.post("/", authenticate, requireAdmin, async (req, res) => {
   const client = await pool.connect();
 
-  try {
-const { businessDayId, breakdown, reason, description } = req.body;
+  
 
-    if (!businessDayId || !Array.isArray(breakdown) || breakdown.length === 0) {
+  try {
+const { breakdown, reason, description, partnerId } = req.body;
+const finalBusinessDayId = req.businessDayId;
+
+    if (!finalBusinessDayId || !Array.isArray(breakdown) || breakdown.length === 0) {
       return res.status(400).json({ message: "Invalid request format" });
     }
 
@@ -60,10 +65,10 @@ if (reason === "Other" && (!description || description.trim() === "")) {
       `
       SELECT note_value, quantity
       FROM denominations
-      WHERE business_day_id = $1
+      WHERE restaurant_id=$1 AND business_day_id = $2
       FOR UPDATE
       `,
-      [businessDayId]
+      [req.restaurantId,finalBusinessDayId]
     );
 
     if (drawerRes.rows.length === 0) {
@@ -88,15 +93,17 @@ if (reason === "Other" && (!description || description.trim() === "")) {
 
       if (qty <= 0) continue;
 
-      const denomRow = drawerRes.rows.find(
-        (r) => Number(r.note_value) === note
-      );
+      const denomMap = new Map(
+  drawerRes.rows.map(r => [Number(r.note_value), Number(r.quantity)])
+);
 
-      if (!denomRow) {
-        throw new Error(`No ₹${note} notes found`);
-      }
+const available = denomMap.get(note);
 
-      if (qty > Number(denomRow.quantity)) {
+      if (available === undefined) {
+  throw new Error(`No ₹${note} notes found`);
+}
+
+      if (qty > available) {
         throw new Error(`Not enough ₹${note} notes available`);
       }
 
@@ -122,21 +129,36 @@ if (reason === "Other" && (!description || description.trim() === "")) {
         `
         UPDATE denominations
         SET quantity = quantity - $1
-        WHERE business_day_id = $2
-        AND note_value = $3
+        WHERE restaurant_id=$2 AND business_day_id = $3
+        AND note_value = $4
         `,
-        [qty, businessDayId, note]
+        [qty, req.restaurantId, finalBusinessDayId, note]
       );
     }
 
     await client.query(
       `
       INSERT INTO cash_withdrawals
-      (business_day_id, amount, user_id, reason, description)
-      VALUES ($1, $2, $3, $4, $5)
+(
+ restaurant_id,
+ business_day_id,
+ amount,
+ user_id,
+ partner_id,
+ reason,
+ description
+)
+VALUES ($1,$2,$3,$4,$5,$6,$7)
       `,
-      [businessDayId, withdrawalTotal, req.user.id, reason, description && description.trim() !== "" ? description.trim() : null]
-    );
+[
+ req.restaurantId,
+ finalBusinessDayId,
+ withdrawalTotal,
+ partnerId ? null : req.user.id,
+ partnerId || null,
+ reason,
+ description && description.trim() !== "" ? description.trim() : null
+]    );
 
     /* ===============================
    LEDGER ENTRY (WITHDRAWAL)
@@ -145,10 +167,10 @@ if (reason === "Other" && (!description || description.trim() === "")) {
 await client.query(
   `
   INSERT INTO cash_ledger
-  (business_day_id, type, reference_id, amount)
-  VALUES ($1, 'withdrawal', currval('cash_withdrawals_id_seq'), $2)
+  (restaurant_id,business_day_id, type, reference_id, amount)
+  VALUES ($1, $2, 'withdrawal', currval('cash_withdrawals_id_seq'), $3)
   `,
-  [businessDayId, -withdrawalTotal]
+  [req.restaurantId,finalBusinessDayId, -withdrawalTotal]
 );
 
   if (EXPENSE_REASONS.includes(reason)) {
@@ -156,17 +178,28 @@ await client.query(
   await client.query(
     `
     INSERT INTO expenses
-    (business_day_id, amount, category, description, payment_method, user_id)
-    VALUES ($1, $2, $3, $4, $5, $6)
+(
+ restaurant_id,
+ business_day_id,
+ amount,
+ category,
+ description,
+ payment_method,
+ user_id,
+ partner_id
+)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     `,
     [
-      businessDayId,
-      withdrawalTotal,
-      reason,
-      description ? description.trim() : null,
-      "cash",
-      req.user.id
-    ]
+ req.restaurantId,
+ finalBusinessDayId,
+ withdrawalTotal,
+ reason,
+ description ? description.trim() : null,
+ "cash",
+ partnerId ? null : req.user.id,
+ partnerId || null
+]
   );
 }
     await client.query("COMMIT");
@@ -194,20 +227,21 @@ router.get("/history", authenticate,requireAdmin, async (req, res) => {
     const { from, to } = req.query;
 
     let query = `
-  SELECT 
-    cw.id,
-    cw.amount,
-    cw.reason,
-    cw.description,
-    cw.created_at,
-    u.name AS user_name
-  FROM cash_withdrawals cw
-  LEFT JOIN users u ON cw.user_id = u.id
-  WHERE 1=1
+  SELECT
+  cw.*,
+  u.name AS user_name,
+  p.name AS partner_name,
+  COALESCE(p.name, u.name) AS owner_name
+FROM cash_withdrawals cw
+LEFT JOIN users u
+  ON cw.user_id = u.id AND u.restaurant_id = $1
+LEFT JOIN partners p
+  ON cw.partner_id = p.id AND p.restaurant_id = $1
+WHERE cw.restaurant_id = $1 AND 1=1
 `;
 
-    const values = [];
-    let index = 1;
+    const values = [req.restaurantId];
+    let index = 2;
 
     if (from) {
       query += ` AND cw.created_at >= $${index}`;
@@ -238,9 +272,11 @@ router.post("/deposit", authenticate, requireAdmin, async (req, res) => {
   const client = await pool.connect();
 
   try {
-    const { businessDayId, breakdown, reason } = req.body;
+    const { breakdown, reason, partnerId } = req.body;
 
-    if (!businessDayId || !Array.isArray(breakdown)) {
+const finalBusinessDayId = req.businessDayId;
+
+    if (!finalBusinessDayId || !Array.isArray(breakdown)) {
       return res.status(400).json({ message: "Invalid request" });
     }
 
@@ -258,10 +294,10 @@ router.post("/deposit", authenticate, requireAdmin, async (req, res) => {
         `
         UPDATE denominations
         SET quantity = quantity + $1
-        WHERE business_day_id = $2
-        AND note_value = $3
+        WHERE restaurant_id=$2 AND business_day_id = $3
+        AND note_value = $4
         `,
-        [qty, businessDayId, note]
+        [qty, req.restaurantId, finalBusinessDayId, note]
       );
 
       totalAmount += note * qty;
@@ -274,10 +310,24 @@ router.post("/deposit", authenticate, requireAdmin, async (req, res) => {
     await client.query(
       `
       INSERT INTO cash_deposits
-      (business_day_id, amount, user_id, reason)
-      VALUES ($1, $2, $3, $4)
+(
+ restaurant_id,
+ business_day_id,
+ amount,
+ user_id,
+ partner_id,
+ reason
+)
+VALUES ($1,$2,$3,$4,$5,$6)
       `,
-      [businessDayId, totalAmount, req.user.id, reason || "Drawer Refill"]
+      [
+ req.restaurantId,
+ finalBusinessDayId,
+ totalAmount,
+ partnerId ? null : req.user.id,
+ partnerId || null,
+ reason || "Drawer Refill"
+]
     );
 
     /* ===============================
@@ -287,10 +337,10 @@ router.post("/deposit", authenticate, requireAdmin, async (req, res) => {
 await client.query(
   `
   INSERT INTO cash_ledger
-  (business_day_id, type, reference_id, amount)
-  VALUES ($1, 'sale', currval('cash_deposits_id_seq'), $2)
+  (restaurant_id,business_day_id, type, reference_id, amount)
+  VALUES ($1, $2, 'sale', currval('cash_deposits_id_seq'), $3)
   `,
-  [businessDayId, totalAmount]
+  [req.restaurantId,finalBusinessDayId, totalAmount]
 );
 
     await client.query("COMMIT");
@@ -314,19 +364,21 @@ router.get("/deposits-history", authenticate,requireAdmin,async (req, res) => {
     const { from, to } = req.query;
 
     let query = `
-      SELECT 
-        cd.id,
-        cd.amount,
-        cd.reason,
-        cd.created_at,
-        u.name AS user_name
-      FROM cash_deposits cd
-      LEFT JOIN users u ON cd.user_id = u.id
-      WHERE 1=1
+      SELECT
+  cd.*,
+  u.name AS user_name,
+  p.name AS partner_name,
+  COALESCE(p.name, u.name) AS owner_name
+FROM cash_deposits cd
+LEFT JOIN users u
+  ON cd.user_id = u.id AND u.restaurant_id = $1
+LEFT JOIN partners p
+  ON cd.partner_id = p.id AND p.restaurant_id = $1
+WHERE cd.restaurant_id = $1 AND 1=1
     `;
 
-    const values = [];
-    let index = 1;
+    const values = [req.restaurantId];
+    let index = 2;
 
     if (from) {
       query += ` AND cd.created_at >= $${index}`;
@@ -351,4 +403,7 @@ router.get("/deposits-history", authenticate,requireAdmin,async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+
+
 export default router;

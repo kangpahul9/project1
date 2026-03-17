@@ -1,25 +1,36 @@
 import express from "express";
 import jwt from "jsonwebtoken";
-import { findUserByPin } from "../services/userService.js";
+import bcrypt from "bcrypt";
+import { findUserByEmail } from "../services/userService.js";
 
 const router = express.Router();
 
 router.post("/login", async (req, res) => {
   try {
-    const { pin } = req.body;
+    const { restaurantUid, email, password } = req.body;
 
-    if (!pin) {
-      return res.status(400).json({ message: "PIN required" });
+    if (!restaurantUid || !email || !password) {
+      return res.status(400).json({ message: "Restaurant ID, email and password required" });
     }
 
-    const user = await findUserByPin(pin);
+    const user = await findUserByEmail(restaurantUid, email);
 
     if (!user) {
-      return res.status(401).json({ message: "Invalid PIN" });
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+
+    if (!validPassword) {
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
     const token = jwt.sign(
-      { id: user.id, role: user.role },
+      {
+        id: user.id,
+        role: user.role,
+        restaurantId: user.restaurant_id
+      },
       process.env.JWT_SECRET,
       { expiresIn: "8h" }
     );
@@ -28,6 +39,7 @@ router.post("/login", async (req, res) => {
       userId: user.id,
       name: user.name,
       role: user.role,
+      restaurantId: user.restaurant_id,
       token
     });
 

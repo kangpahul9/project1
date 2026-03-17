@@ -2,7 +2,8 @@ import express from "express";
 import pool from "../config/db.js";
 import { authenticate,requireAdmin } from "../middleware/authMiddleware.js";
 import upload from "../middleware/upload.js";
-
+import { getBusinessDay } from "../utils/getBusinessDay.js";
+import { addBankTransaction } from "../utils/bankLedger.js";
 
 const router = express.Router();
 
@@ -11,25 +12,25 @@ const router = express.Router();
 ========================================= */
 router.post("/", authenticate, async (req, res) => {
   const client = await pool.connect();
-
+ 
   try {
     const {
-      businessDayId,
-      amount,
-      category,
-      description,
-      paymentMode,
-      vendorId,
-      staff_id,
-      document_url,
-      is_paid,
-      deduct_from_galla,
-      denominations,
-      source
-    } = req.body;
+  amount,
+  category,
+  description,
+  paymentMode,
+  vendorId,
+  staff_id,
+  document_url,
+  is_paid,
+  deduct_from_galla,
+  denominations,
+  source,
+  partnerId
+} = req.body;
 
-    if (!businessDayId || !amount || !category || !paymentMode) {
-  return res.status(400).json({ message: "Missing required fields" });
+if (!amount || !category || !paymentMode) {
+    return res.status(400).json({ message: "Missing required fields" });
 }
 
 if (category === "supplies" && !vendorId) {
@@ -44,11 +45,13 @@ if (category === "salary" && !staff_id) {
    
     await client.query("BEGIN");
 
+     const finalBusinessDayId = req.businessDayId
+
     // Validate vendor
     if (vendorId) {
   const vendorCheck = await client.query(
-    "SELECT id FROM vendors WHERE id = $1",
-    [vendorId]
+    "SELECT id FROM vendors WHERE restaurant_id = $1 AND id = $2",
+    [req.restaurantId,vendorId]
   );
 
   if (vendorCheck.rows.length === 0) {
@@ -90,9 +93,9 @@ if (paymentMode === "cash" && deduct_from_galla) {
   `
   SELECT quantity
   FROM denominations
-  WHERE business_day_id = $1 AND note_value = $2
+  WHERE restaurant_id = $1 AND business_day_id = $2 AND note_value = $3
   `,
-  [businessDayId, value]
+  [req.restaurantId, finalBusinessDayId, value]
   );
 
   if (!check.rows.length || check.rows[0].quantity < qty) {
@@ -103,23 +106,12 @@ if (paymentMode === "cash" && deduct_from_galla) {
   `
   UPDATE denominations
   SET quantity = quantity - $1
-  WHERE business_day_id = $2 AND note_value = $3
+  WHERE restaurant_id = $2 AND business_day_id = $3 AND note_value = $4
   `,
-  [qty, businessDayId, value]
+  [qty, req.restaurantId, finalBusinessDayId, value]
   );
 }
 
-  // Deduct from denominations table
-  for (const [value, qty] of Object.entries(denominations)) {
-    await client.query(
-      `
-      UPDATE denominations
-      SET quantity = quantity - $1
-      WHERE business_day_id = $2 AND note_value = $3
-      `,
-      [qty, businessDayId, value]
-    );
-  }
 
   // Record withdrawal
  let reason = 'Other';
@@ -128,23 +120,40 @@ if (category === 'utility') reason = 'Utilities';
 else if (category === 'supplies') reason = 'Supplier Payment';
 else if (category === 'salary') reason = 'Staff Salary';
 
-await client.query(
-  `
-  INSERT INTO cash_withdrawals
-  (business_day_id, amount, reason)
-  VALUES ($1,$2,$3)
-  `,
-  [businessDayId, amount, reason]
+const withdrawalRes = await client.query(
+`
+INSERT INTO cash_withdrawals
+(
+ restaurant_id,
+ business_day_id,
+ amount,
+ user_id,
+ partner_id,
+ reason
+)
+VALUES ($1,$2,$3,$4,$5,$6)
+RETURNING id
+`,
+[
+ req.restaurantId,
+ finalBusinessDayId,
+ amount,
+ partnerId ? null : req.user.id,
+ partnerId || null,
+ reason
+]
 );
+
+withdrawalId = withdrawalRes.rows[0].id;
 }
 
     /* ===============================
        INSERT EXPENSE
     =============================== */
     const result = await client.query(
-`
-INSERT INTO expenses
+`INSERT INTO expenses
 (
+  restaurant_id,
   business_day_id,
   vendor_id,
   amount,
@@ -152,28 +161,58 @@ INSERT INTO expenses
   description,
   payment_method,
   user_id,
+  partner_id,
   staff_id,
   document_url,
   is_paid,
   source
 )
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 RETURNING *
 `,
 [
-  businessDayId,
+  req.restaurantId,
+  finalBusinessDayId,
   vendorId,
   amount,
   category,
   description || null,
   paymentMode,
-  req.user.id,
+  partnerId ? null : req.user.id,
+  partnerId || null,
   staff_id || null,
   document_url || null,
   is_paid || false,
   source || "manual"
 ]
 );
+
+// 🔥 BANK LEDGER (ONLY ONLINE/CARD + PAID)
+if (
+  ["online", "card"].includes(paymentMode) &&
+  is_paid
+) {
+  const bankRes = await client.query(
+    `SELECT id FROM bank_accounts WHERE restaurant_id=$1 LIMIT 1`,
+    [req.restaurantId]
+  );
+
+  const bankAccountId = bankRes.rows[0]?.id;
+
+  if (!bankAccountId) {
+    throw new Error("Bank account not configured");
+  }
+
+  await addBankTransaction(client, {
+    restaurantId: req.restaurantId,
+    bankAccountId,
+    amount,
+    type: "debit",
+    source: "expense",
+    referenceId: result.rows[0].id,
+    description: description || category
+  });
+}
 
 // 🔥 ADD THIS
 if (
@@ -185,13 +224,14 @@ if (
   await client.query(
     `
     INSERT INTO staff_transactions
-(staff_id, amount, type, reason, business_day_id, expense_id)
-VALUES ($1,$2,'payment','Salary Payment',$3,$4)
+(restaurant_id, staff_id, amount, type, reason, business_day_id, expense_id)
+VALUES ($1,$2,$3,'payment','Salary Payment',$4,$5)
     `,
     [
+  req.restaurantId,
   staff_id,
   amount,
-  businessDayId,
+  finalBusinessDayId,
   result.rows[0].id
 ]
   );
@@ -221,13 +261,24 @@ router.get("/", authenticate, requireAdmin,async (req, res) => {
   e.*,
   u.name AS created_by,
   s.name AS staff_name,
-  v.name AS vendor_name
+  v.name AS vendor_name,
+  p.name AS partner_name
 FROM expenses e
-LEFT JOIN users u ON e.user_id = u.id
-LEFT JOIN staff s ON e.staff_id = s.id
-LEFT JOIN vendors v ON e.vendor_id = v.id
+LEFT JOIN users u 
+  ON e.user_id = u.id AND u.restaurant_id = $1
+
+LEFT JOIN staff s 
+  ON e.staff_id = s.id AND s.restaurant_id = $1
+
+LEFT JOIN vendors v 
+  ON e.vendor_id = v.id AND v.restaurant_id = $1
+
+LEFT JOIN partners p
+  ON e.partner_id = p.id AND p.restaurant_id = $1
+WHERE e.restaurant_id = $1
 ORDER BY e.created_at DESC
-    `);
+    `
+    , [req.restaurantId]);
 
     res.json(result.rows);
 
@@ -246,13 +297,13 @@ router.put("/:id", authenticate, requireAdmin,async (req, res) => {
 
   try {
     const { id } = req.params;
-    const { amount, category, description, paymentMode, vendorId, is_paid } = req.body;
+    const { amount, category, description, paymentMode, vendorId, is_paid,partnerId } = req.body;
 
     await client.query("BEGIN");
 
     const expenseRes = await client.query(
-      "SELECT * FROM expenses WHERE id = $1",
-      [id]
+      "SELECT * FROM expenses WHERE id = $1 AND restaurant_id = $2",
+      [id, req.restaurantId]
     );
 
     if (expenseRes.rows.length === 0) {
@@ -260,6 +311,7 @@ router.put("/:id", authenticate, requireAdmin,async (req, res) => {
       return res.status(404).json({ message: "Expense not found" });
     }
     if (category === "supplies" && is_paid) {
+      await client.query("ROLLBACK");
   return res.status(400).json({
     message: "Supplies must be settled via Vendor Settlement"
   });
@@ -280,22 +332,93 @@ router.put("/:id", authenticate, requireAdmin,async (req, res) => {
   amountPaid = amount;
   paidAt = new Date();
 
-  if (expense.category === "salary" && expense.staff_id) {
+  /* ===============================
+     CASH + GALLA LOGIC (FIX)
+  =============================== */
+  if (paymentMode === "cash" && req.body.deduct_from_galla) {
+
+    const denominations = req.body.denominations;
+
+    if (!denominations || Object.keys(denominations).length === 0) {
+      throw new Error("Denominations required when deducting from galla");
+    }
+
+    let calculatedTotal = 0;
+
+    for (const [value, qty] of Object.entries(denominations)) {
+      calculatedTotal += Number(value) * Number(qty);
+    }
+
+    if (calculatedTotal !== Number(amount)) {
+      throw new Error("Denomination total mismatch");
+    }
+
+    for (const [value, qty] of Object.entries(denominations)) {
+
+      const check = await client.query(
+        `
+        SELECT quantity
+        FROM denominations
+        WHERE restaurant_id=$1 AND business_day_id=$2 AND note_value=$3
+        FOR UPDATE
+        `,
+        [req.restaurantId, expense.business_day_id, value]
+      );
+
+      if (!check.rows.length || check.rows[0].quantity < qty) {
+        throw new Error(`Not enough ₹${value} notes`);
+      }
+
+      await client.query(
+        `
+        UPDATE denominations
+        SET quantity = quantity - $1
+        WHERE restaurant_id=$2 AND business_day_id=$3 AND note_value=$4
+        `,
+        [qty, req.restaurantId, expense.business_day_id, value]
+      );
+    }
+
+    // 🔥 create withdrawal entry
+    let reason = "Other";
+    if (expense.category === "utility") reason = "Utilities";
+    else if (expense.category === "supplies") reason = "Supplier Payment";
+    else if (expense.category === "salary") reason = "Staff Salary";
 
     await client.query(
-    `
-    INSERT INTO staff_transactions
-    (staff_id, amount, type, reason, business_day_id, expense_id)
-    VALUES ($1,$2,'payment','Salary Payment',$3,$4)
-    `,
-    [
-      expense.staff_id,
-      amount,
-      expense.business_day_id,
-      expense.id
-    ]
+      `
+      INSERT INTO cash_withdrawals
+      (restaurant_id, business_day_id, amount, user_id, reason)
+      VALUES ($1,$2,$3,$4,$5)
+      `,
+      [
+        req.restaurantId,
+        expense.business_day_id,
+        amount,
+        req.user.id,
+        reason
+      ]
     );
+  }
 
+  /* ===============================
+     STAFF LOGIC (existing)
+  =============================== */
+  if (expense.category === "salary" && expense.staff_id) {
+    await client.query(
+      `
+      INSERT INTO staff_transactions
+      (restaurant_id, staff_id, amount, type, reason, business_day_id, expense_id)
+      VALUES ($1,$2,$3,'payment','Salary Payment',$4,$5)
+      `,
+      [
+        req.restaurantId,
+        expense.staff_id,
+        amount,
+        expense.business_day_id,
+        expense.id
+      ]
+    );
   }
 }
 
@@ -308,9 +431,10 @@ router.put("/:id", authenticate, requireAdmin,async (req, res) => {
           payment_method = $4,
           vendor_id = $5,
           is_paid = $6,
-          amount_paid = $7,
-          paid_at = $8
-      WHERE id = $9
+          partner_id = $7,
+          amount_paid = $8,
+          paid_at = $9
+      WHERE id = $10 AND restaurant_id = $11
       RETURNING *
       `,
       [
@@ -320,11 +444,41 @@ router.put("/:id", authenticate, requireAdmin,async (req, res) => {
         paymentMode,
         vendorId || null,
         is_paid,
+        partnerId || req.user.id,
         amountPaid,
         paidAt,
-        id
+        id, 
+        req.restaurantId
       ]
     );
+
+    const wasUnpaid = !expense.is_paid && is_paid;
+
+    if (
+  wasUnpaid &&
+  ["online", "card"].includes(paymentMode)
+) {
+  const bankRes = await client.query(
+    `SELECT id FROM bank_accounts WHERE restaurant_id=$1 LIMIT 1`,
+    [req.restaurantId]
+  );
+
+  const bankAccountId = bankRes.rows[0]?.id;
+
+  if (!bankAccountId) {
+    throw new Error("Bank account not configured");
+  }
+
+  await addBankTransaction(client, {
+    restaurantId: req.restaurantId,
+    bankAccountId,
+    amount,
+    type: "debit",
+    source: "expense",
+    referenceId: expense.id,
+    description: description || category
+  });
+}
 
     await client.query("COMMIT");
 
@@ -349,14 +503,12 @@ router.delete("/:id", authenticate,requireAdmin, async (req, res) => {
     const { id } = req.params;
 
     const result = await pool.query(
-  `DELETE FROM expenses
-WHERE id = $1
+`DELETE FROM expenses
+WHERE restaurant_id = $1
+AND id = $2
 AND is_paid = FALSE
-AND business_day_id IN (
-  SELECT id FROM business_days WHERE is_closed = false
-)
-   RETURNING id`,
-  [id]
+RETURNING id`,
+[req.restaurantId, id]
 );
 
 if (result.rowCount === 0) {
@@ -373,7 +525,7 @@ res.json({ message: "Expense deleted" });
 
 router.post(
   "/upload",
-  authenticate,requireAdmin,
+  authenticate,
   upload.single("file"),
   async (req, res) => {
     if (!req.file) {

@@ -1,6 +1,9 @@
 import express from "express";
 import pool from "../config/db.js";
 import { authenticate, requireAdmin } from "../middleware/authMiddleware.js";
+import { getBusinessDay } from "../utils/getBusinessDay.js";
+import { addBankTransaction } from "../utils/bankLedger.js";
+
 
 const router = express.Router();
 
@@ -11,8 +14,8 @@ router.get("/", authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM staff
-       WHERE is_active = TRUE
-       ORDER BY name ASC`
+       WHERE restaurant_id=$1 AND is_active = TRUE
+       ORDER BY name ASC`, [req.restaurantId]
     );
 
     res.json(result.rows);
@@ -35,11 +38,11 @@ router.get("/with-balance", authenticate, requireAdmin, async (req, res) => {
         ),0) AS balance
       FROM staff s
       LEFT JOIN staff_transactions t 
-      ON s.id = t.staff_id
-      WHERE s.is_active = TRUE
+      ON s.id = t.staff_id AND s.restaurant_id=$1
+      WHERE s.restaurant_id=$1 AND s.is_active = TRUE
       GROUP BY s.id
       ORDER BY s.name ASC
-    `);
+    `,[req.restaurantId]);
 
     res.json(result.rows);
   } catch (err) {
@@ -57,17 +60,17 @@ router.get("/summary", authenticate,requireAdmin,async (req, res) => {
     const totalSalaryRes = await pool.query(`
       SELECT COALESCE(SUM(salary),0) AS total
       FROM staff
-      WHERE is_active = TRUE
-    `);
+      WHERE is_active = TRUE AND restaurant_id=$1
+    `,[req.restaurantId]);
 
     // 2️⃣ Paid This Month
     const paidRes = await pool.query(`
       SELECT COALESCE(SUM(amount),0) AS paid
       FROM staff_transactions
-      WHERE type = 'payment'
+      WHERE restaurant_id=$1 AND type = 'payment'
       AND DATE_TRUNC('month', created_at) =
           DATE_TRUNC('month', CURRENT_DATE)
-    `);
+    `,[req.restaurantId]);
 
     // 3️⃣ Get balances per staff
     const balanceRes = await pool.query(`
@@ -81,10 +84,10 @@ router.get("/summary", authenticate,requireAdmin,async (req, res) => {
         ),0) AS balance
       FROM staff s
       LEFT JOIN staff_transactions t 
-      ON s.id = t.staff_id
-      WHERE s.is_active = TRUE
+      ON s.id = t.staff_id AND s.restaurant_id=$1
+      WHERE s.restaurant_id=$1 AND s.is_active = TRUE
       GROUP BY s.id
-    `);
+    `,[req.restaurantId]);
 
     let totalUnpaid = 0;
     let totalCredit = 0;
@@ -115,111 +118,319 @@ router.get("/summary", authenticate,requireAdmin,async (req, res) => {
 /* ===============================
    GET ROSTER RANGE
 ================================ */
-router.get("/roster", authenticate,async (req, res) => {
+router.get("/roster", authenticate, async (req, res) => {
   const { start, end } = req.query;
-
-  if (!start || !end) {
-    return res.status(400).json({ message: "Start and end required" });
-  }
 
   try {
     const result = await pool.query(
       `
-      SELECT r.*, s.name
-      FROM staff_roster r
-      JOIN staff s ON s.id = r.staff_id
-      WHERE r.date BETWEEN $1 AND $2
-      ORDER BY r.date ASC
+      SELECT 
+        s.id AS shift_id,
+        s.date,
+        s.shift_start,
+        s.shift_end,
+        json_agg(
+          json_build_object(
+            'id', st.id,
+            'name', st.name
+          )
+        ) AS staff
+      FROM shifts s
+      JOIN shift_assignments sa ON sa.shift_id = s.id
+      JOIN staff st ON st.id = sa.staff_id
+      WHERE s.restaurant_id=$1
+      AND s.date BETWEEN $2 AND $3
+      GROUP BY s.id
+      ORDER BY s.date ASC
       `,
-      [start, end]
+      [req.restaurantId, start, end]
     );
 
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: "Failed to fetch roster" });
   }
 });
 
 //add shift to roster
-router.post("/roster", authenticate,requireAdmin, async (req, res) => {
-  const { staff_id, date, shift_start, shift_end } = req.body;
+router.post("/roster", authenticate, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
 
-  if (!staff_id || !date || !shift_start || !shift_end) {
+  const { date, shift_start, shift_end, staff_ids } = req.body;
+
+  if (!date || !shift_start || !shift_end || !staff_ids?.length) {
     return res.status(400).json({ message: "Missing fields" });
   }
 
   try {
-    // Prevent overlap
-    const overlap = await pool.query(
-      `
-      SELECT 1 FROM staff_roster
-      WHERE staff_id = $1
-      AND date = $2
-      AND (
-        (shift_start <= $3 AND shift_end > $3) OR
-        (shift_start < $4 AND shift_end >= $4)
-      )
-      `,
-      [staff_id, date, shift_start, shift_end]
-    );
+    await client.query("BEGIN");
 
-    if (overlap.rows.length > 0) {
-      return res.status(400).json({ message: "Shift overlap detected" });
+    const uniqueStaffIds = [...new Set(staff_ids)];
+
+    // 🚨 OVERLAP CHECK FIRST (important)
+    for (const staffId of uniqueStaffIds) {
+
+      const check = await client.query(
+        `SELECT id FROM staff WHERE id=$1 AND restaurant_id=$2`,
+        [staffId, req.restaurantId]
+      );
+
+      if (!check.rows.length) {
+        throw new Error(`Invalid staff id ${staffId}`);
+      }
+
+      const overlap = await client.query(
+        `
+        SELECT 1
+        FROM shift_assignments sa
+        JOIN shifts s ON sa.shift_id = s.id
+        WHERE sa.staff_id = $1
+        AND s.restaurant_id = $2
+        AND s.date = $3
+        AND (
+          (s.shift_start <= $4 AND s.shift_end > $4) OR
+          (s.shift_start < $5 AND s.shift_end >= $5)
+        )
+        `,
+        [staffId, req.restaurantId, date, shift_start, shift_end]
+      );
+
+      if (overlap.rows.length) {
+        throw new Error(`Shift overlap for staff ${staffId}`);
+      }
     }
 
-    const result = await pool.query(
+    // ✅ CREATE SHIFT AFTER VALIDATION
+    const shiftRes = await client.query(
       `
-      INSERT INTO staff_roster
-      (staff_id, date, shift_start, shift_end)
-      VALUES ($1,$2,$3,$4)
+      INSERT INTO shifts (restaurant_id, date, shift_start, shift_end, created_by)
+      VALUES ($1,$2,$3,$4,$5)
       RETURNING *
       `,
-      [staff_id, date, shift_start, shift_end]
+      [req.restaurantId, date, shift_start, shift_end, req.user.id]
     );
 
-    res.status(201).json(result.rows[0]);
+    const shiftId = shiftRes.rows[0].id;
+
+    // ✅ INSERT ASSIGNMENTS
+    for (const staffId of uniqueStaffIds) {
+      await client.query(
+        `
+        INSERT INTO shift_assignments (restaurant_id, shift_id, staff_id)
+        VALUES ($1,$2,$3)
+        `,
+        [req.restaurantId, shiftId, staffId]
+      );
+    }
+
+    await client.query("COMMIT");
+
+    const staffRes = await client.query(
+      `
+      SELECT st.id, st.name
+      FROM shift_assignments sa
+      JOIN staff st ON st.id = sa.staff_id
+      WHERE sa.shift_id = $1
+      `,
+      [shiftId]
+    );
+
+    res.status(201).json({
+      shift: shiftRes.rows[0],
+      staff: staffRes.rows
+    });
+
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error(err);
-    res.status(500).json({ message: "Failed to create shift" });
+    res.status(500).json({ message: err.message || "Failed to create shift" });
+  } finally {
+    client.release();
   }
 });
 
-//update shift
-router.put("/roster/:id", authenticate,requireAdmin,async (req, res) => {
-  const { id } = req.params;
-  const { shift_start, shift_end } = req.body;
+router.post("/roster/copy", authenticate, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  const { from_date, to_date } = req.body;
 
   try {
-    const result = await pool.query(
+    await client.query("BEGIN");
+
+    const shifts = await client.query(
       `
-      UPDATE staff_roster
-      SET shift_start = $1,
-          shift_end = $2
-      WHERE id = $3
-      RETURNING *
+      SELECT s.*, sa.staff_id
+      FROM shifts s
+      JOIN shift_assignments sa ON sa.shift_id = s.id
+      WHERE s.restaurant_id=$1 AND s.date=$2
       `,
-      [shift_start, shift_end, id]
+      [req.restaurantId, from_date]
     );
 
-    res.json(result.rows[0]);
+    const shiftMap = {};
+
+    for (const row of shifts.rows) {
+      const key = `${row.shift_start}-${row.shift_end}`;
+
+      if (!shiftMap[key]) {
+        const newShift = await client.query(
+          `
+          INSERT INTO shifts (restaurant_id, date, shift_start, shift_end)
+          VALUES ($1,$2,$3,$4)
+          RETURNING id
+          `,
+          [req.restaurantId, to_date, row.shift_start, row.shift_end]
+        );
+
+        shiftMap[key] = newShift.rows[0].id;
+      }
+
+      await client.query(
+        `
+        INSERT INTO shift_assignments (restaurant_id, shift_id, staff_id)
+        VALUES ($1,$2,$3)
+        `,
+        [req.restaurantId, shiftMap[key], row.staff_id]
+      );
+    }
+
+    await client.query("COMMIT");
+    res.json({ message: "Roster copied" });
+
   } catch (err) {
-    res.status(500).json({ message: "Failed to update shift" });
+    await client.query("ROLLBACK");
+    res.status(500).json({ message: "Failed to copy roster" });
+  } finally {
+    client.release();
   }
 });
+//update shift
+router.put("/roster/:id", authenticate, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
 
+  const { id } = req.params;
+  const { shift_start, shift_end, staff_ids } = req.body;
+
+  try {
+    await client.query("BEGIN");
+
+    // ✅ GET SHIFT DATE FIRST
+    const shiftDateRes = await client.query(
+      `SELECT date FROM shifts WHERE id=$1 AND restaurant_id=$2`,
+      [id, req.restaurantId]
+    );
+
+    if (!shiftDateRes.rows.length) {
+      throw new Error("Shift not found");
+    }
+
+    const shiftDate = shiftDateRes.rows[0].date;
+    const uniqueStaffIds = [...new Set(staff_ids || [])];
+
+    // 🚨 OVERLAP CHECK BEFORE ANY DELETE
+    for (const staffId of uniqueStaffIds) {
+
+      const check = await client.query(
+        `SELECT id FROM staff WHERE id=$1 AND restaurant_id=$2`,
+        [staffId, req.restaurantId]
+      );
+
+      if (!check.rows.length) {
+        throw new Error(`Invalid staff id ${staffId}`);
+      }
+
+      const overlap = await client.query(
+        `
+        SELECT 1
+        FROM shift_assignments sa
+        JOIN shifts s ON sa.shift_id = s.id
+        WHERE sa.staff_id = $1
+        AND s.restaurant_id = $2
+        AND s.date = $3
+        AND s.id != $6
+        AND (
+          (s.shift_start <= $4 AND s.shift_end > $4) OR
+          (s.shift_start < $5 AND s.shift_end >= $5)
+        )
+        `,
+        [staffId, req.restaurantId, shiftDate, shift_start, shift_end, id]
+      );
+
+      if (overlap.rows.length) {
+        throw new Error(`Shift overlap for staff ${staffId}`);
+      }
+    }
+
+    // ✅ UPDATE SHIFT TIMING
+    const shiftRes = await client.query(
+      `
+      UPDATE shifts
+      SET shift_start = $1,
+          shift_end = $2
+      WHERE id = $3 AND restaurant_id = $4
+      RETURNING *
+      `,
+      [shift_start, shift_end, id, req.restaurantId]
+    );
+
+    // ✅ DELETE OLD ASSIGNMENTS
+    await client.query(
+      `DELETE FROM shift_assignments WHERE shift_id=$1 AND restaurant_id=$2`,
+      [id, req.restaurantId]
+    );
+
+    // ✅ INSERT NEW ASSIGNMENTS
+    for (const staffId of uniqueStaffIds) {
+      await client.query(
+        `
+        INSERT INTO shift_assignments (restaurant_id, shift_id, staff_id)
+        VALUES ($1,$2,$3)
+        `,
+        [req.restaurantId, id, staffId]
+      );
+    }
+
+    await client.query("COMMIT");
+
+    const staffRes = await client.query(
+      `
+      SELECT st.id, st.name
+      FROM shift_assignments sa
+      JOIN staff st ON st.id = sa.staff_id
+      WHERE sa.shift_id = $1
+      `,
+      [id]
+    );
+
+    res.json({
+      shift: shiftRes.rows[0],
+      staff: staffRes.rows
+    });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ message: err.message || "Failed to update shift" });
+  } finally {
+    client.release();
+  }
+});
 //delete shift
-router.delete("/roster/:id", authenticate, requireAdmin,async (req, res) => {
+router.delete("/roster/:id", authenticate, requireAdmin, async (req, res) => {
   const { id } = req.params;
 
   try {
     await pool.query(
-      `DELETE FROM staff_roster WHERE id = $1`,
-      [id]
+      `
+      DELETE FROM shifts
+      WHERE id = $1 AND restaurant_id = $2
+      `,
+      [id, req.restaurantId]
     );
 
     res.json({ message: "Shift deleted" });
+
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Failed to delete shift" });
   }
 });
@@ -239,11 +450,11 @@ router.get("/:id/history", authenticate,requireAdmin, async (req, res) => {
 e.id as linked_expense_id
 FROM staff_transactions t
 LEFT JOIN expenses e
-ON t.expense_id = e.id
-WHERE t.staff_id = $1
+ON t.expense_id = e.id AND e.restaurant_id=$1
+WHERE t.restaurant_id=$1 AND t.staff_id = $2
 ORDER BY t.created_at ASC
       `,
-      [id]
+      [req.restaurantId,id]
     );
 
     res.json(result.rows);
@@ -258,21 +469,36 @@ router.post("/:id/transaction", authenticate, requireAdmin, async (req, res) => 
   const { id } = req.params;
 
   const {
-    amount,
-    type,
-    reason,
-    payment_method,
-    deduct_from_galla,
-    denominations,
-    businessDayId,
-  } = req.body;
+  amount,
+  type,
+  reason,
+  payment_method,
+  deduct_from_galla,
+  denominations,
+  businessDayId,
+  partnerId
+} = req.body;
 
   if (!amount || !type) {
     return res.status(400).json({ message: "Missing fields" });
   }
+  
 
   try {
     await client.query("BEGIN");
+
+    const staffCheck = await client.query(
+`
+SELECT id
+FROM staff
+WHERE restaurant_id=$1 AND id=$2
+`,
+[req.restaurantId, id]
+);
+
+if (staffCheck.rows.length === 0) {
+  return res.status(404).json({ message: "Staff not found" });
+}
 
     let withdrawalId = null;
 
@@ -294,28 +520,45 @@ router.post("/:id/transaction", authenticate, requireAdmin, async (req, res) => 
       if (calculatedTotal !== Number(amount)) {
         throw new Error("Denomination total mismatch");
       }
+      
 
       // Deduct notes
       for (const [value, qty] of Object.entries(denominations)) {
+        const check = await client.query(
+`
+SELECT quantity
+FROM denominations
+WHERE restaurant_id=$1 AND business_day_id=$2 AND note_value=$3
+FOR UPDATE
+`,
+[req.restaurantId, businessDayId, value]
+);
+
+if (!check.rows.length || check.rows[0].quantity < qty) {
+  throw new Error(`Not enough ₹${value} notes`);
+}
+        
         await client.query(
+          
           `
           UPDATE denominations
           SET quantity = quantity - $1
-          WHERE business_day_id = $2 AND note_value = $3
+          WHERE restaurant_id=$2 AND business_day_id = $3 AND note_value = $4
           `,
-          [qty, businessDayId, value]
+          [qty,req.restaurantId, businessDayId, value]
         );
+        
       }
 
       // Create withdrawal record
       const withdrawalRes = await client.query(
         `
         INSERT INTO cash_withdrawals
-        (business_day_id, amount, reason)
-        VALUES ($1,$2,$3)
+        (restaurant_id,business_day_id, amount, reason)
+        VALUES ($1,$2,$3,$4)
         RETURNING id
         `,
-        [businessDayId, amount, `Staff Salary`]
+        [req.restaurantId,businessDayId, amount, `Staff Salary`]
       );
 
       withdrawalId = withdrawalRes.rows[0].id;
@@ -324,11 +567,11 @@ router.post("/:id/transaction", authenticate, requireAdmin, async (req, res) => 
     const result = await client.query(
       `
       INSERT INTO staff_transactions
-(staff_id, amount, type, reason, business_day_id, withdrawal_id)
-      VALUES ($1,$2,$3,$4,$5,$6)
+(restaurant_id,staff_id, amount, type, reason, business_day_id, withdrawal_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7)
       RETURNING *
       `,
-      [id, amount, type, reason || null, businessDayId || null, withdrawalId]
+      [req.restaurantId,id, amount, type, reason || null, businessDayId || null, withdrawalId]
     );
 
     if (type === "payment") {
@@ -336,43 +579,77 @@ router.post("/:id/transaction", authenticate, requireAdmin, async (req, res) => 
   const expenseRes = await client.query(
   `
   INSERT INTO expenses
-  (
-    business_day_id,
-    amount,
-    category,
-    description,
-    payment_method,
-    user_id,
-    staff_id,
-    is_paid,
-    source
-  )
-  VALUES ($1,$2,'salary',$3,$4,$5,$6,TRUE,'staff_payment')
+(
+ restaurant_id,
+ business_day_id,
+ amount,
+ category,
+ description,
+ payment_method,
+ user_id,
+ partner_id,
+ staff_id,
+ is_paid,
+ source
+)
+  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
   RETURNING id
   `,
   [
-    businessDayId,
-    amount,
-    `Salary payment`,
-    payment_method,
-    req.user.id,
-    id
-  ]
+ req.restaurantId,
+ businessDayId,
+ amount,
+ "salary",
+ `Salary payment`,
+ payment_method,
+ partnerId ? null : req.user.id,
+partnerId || null,
+ id,
+ true,
+ "staff_payment"
+]
 );
+
+if (["online", "card"].includes(payment_method)) {
+
+  const bankRes = await client.query(
+    `SELECT id FROM bank_accounts WHERE restaurant_id=$1 LIMIT 1`,
+    [req.restaurantId]
+  );
+
+  const bankAccountId = bankRes.rows[0]?.id;
+
+  if (!bankAccountId) {
+    throw new Error("Bank account not configured");
+  }
+
+  await addBankTransaction(client, {
+    restaurantId: req.restaurantId,
+    bankAccountId,
+    amount,
+    type: "debit",
+    source: "staff_salary",
+    referenceId: expenseRes.rows[0].id,
+    description: "Staff salary payment"
+  });
+}
 
 await client.query(
 `
 UPDATE staff_transactions
 SET expense_id = $1
-WHERE id = $2
+WHERE id = $2 AND restaurant_id=$3
 `,
 [
   expenseRes.rows[0].id,
-  result.rows[0].id
+  result.rows[0].id,
+  req.restaurantId
 ]
 );
 
 }
+
+
 
     await client.query("COMMIT");
 
@@ -398,24 +675,24 @@ const { name, role, phone, salary, joining_date, opening_balance } = req.body;
   try {
     const result = await pool.query(
   `
-  INSERT INTO staff (name, role, phone, salary, joining_date)
-  VALUES ($1,$2,$3,$4,$5)
+  INSERT INTO staff (restaurant_id,name, role, phone, salary, joining_date)
+  VALUES ($1,$2,$3,$4,$5,$6)
   RETURNING *
   `,
-  [name.trim(), role || null, phone || null, salary || 0, joining_date || new Date()]
+  [req.restaurantId,name.trim(), role || null, phone || null, salary || 0, joining_date || new Date()]
 );
 
 const staff = result.rows[0];
 
 // 🔥 ADD OPENING BALANCE IF PROVIDED
-if (opening_balance && Number(opening_balance) !== 0) {
+if (opening_balance !== undefined && Number(opening_balance) !== 0) {
   await pool.query(
     `
     INSERT INTO staff_transactions
-    (staff_id, amount, type, reason)
-    VALUES ($1,$2,'adjustment','Opening Balance')
+    (restaurant_id,staff_id, amount, type, reason)
+    VALUES ($1,$2,$3,'adjustment','Opening Balance')
     `,
-    [staff.id, opening_balance]
+    [req.restaurantId,staff.id, opening_balance]
   );
 }
 
@@ -442,10 +719,10 @@ SET name=$1,
     salary=$4,
     joining_date=$5,
     is_active=$6
-WHERE id=$7
+WHERE id=$7 AND restaurant_id=$8
 RETURNING *
       `,
-[name, role, phone, salary, joining_date, is_active, id]
+[name, role, phone, salary, joining_date, is_active, id, req.restaurantId]
     );
 
     res.json(result.rows[0]);
@@ -463,8 +740,8 @@ router.delete("/:id", authenticate, requireAdmin, async (req, res) => {
 
   try {
     await pool.query(
-      `UPDATE staff SET is_active = FALSE WHERE id = $1`,
-      [id]
+      `UPDATE staff SET is_active = FALSE WHERE id = $1 AND restaurant_id=$2`,
+      [id,req.restaurantId]
     );
 
     res.json({ message: "Staff deactivated" });

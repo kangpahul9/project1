@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -144,6 +145,7 @@ export function useStaffTransaction() {
   type,
   reason,
   payment_method,
+  partnerId,
   deduct_from_galla,
   denominations,
   businessDayId,
@@ -156,6 +158,7 @@ export function useStaffTransaction() {
       type,
       reason,
       payment_method,
+      partnerId,
       deduct_from_galla,
       denominations,
       businessDayId,
@@ -277,6 +280,51 @@ export function useDeleteShift() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roster"] });
+    },
+  });
+}
+
+export function useCopyRoster() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async ({
+      from_date,
+      to_date,
+    }: {
+      from_date: string;
+      to_date: string;
+    }) => {
+      const res = await fetch(`${API_BASE}/staff/roster/copy`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ from_date, to_date }),
+      });
+
+      if (!res.ok) throw new Error("Failed to copy roster");
+      return res.json();
+    },
+
+    // 🔥 SUCCESS HANDLER
+    onSuccess: () => {
+      // 1. Refresh UI
+      queryClient.invalidateQueries({ queryKey: ["roster"] });
+
+      // 2. Show success toast
+      toast({
+        title: "Roster copied",
+        description: "Next week's schedule created successfully",
+      });
+    },
+
+    // 🔥 ERROR HANDLER (bonus but important)
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to copy roster",
+        variant: "destructive",
+      });
     },
   });
 }

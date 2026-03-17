@@ -62,6 +62,9 @@ export function useVendorUnpaid(vendorId?: number) {
   return useQuery({
     queryKey: ["vendor-unpaid", vendorId],
     enabled: !!vendorId,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
     queryFn: async () => {
       const res = await fetch(`${API_BASE}/vendors/${vendorId}/unpaid`, {
         headers: getAuthHeaders(),
@@ -88,6 +91,7 @@ export function useSettleVendor(vendorId?: number) {
   payment_method: "card" | "online" | "cash";
   final_amount: number;
   deduct_from_galla?: boolean;
+  partnerId?: number | null;
   denominations?: { [key: number]: number };
 }) => {
       if (!vendorId) throw new Error("Vendor ID missing");
@@ -107,7 +111,8 @@ export function useSettleVendor(vendorId?: number) {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["vendors-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["vendor-unpaid", vendorId] });
+      queryClient.invalidateQueries({ queryKey: ["vendor-unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
 
       toast({
         title: "Settlement Successful",

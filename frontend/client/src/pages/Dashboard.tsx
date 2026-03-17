@@ -9,6 +9,7 @@ import { useAuthStore } from "@/hooks/use-auth";
 import { StatCard } from "@/components/StatCard";
 import { Sidebar } from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -25,29 +26,49 @@ import {
   AlertCircle,
   TrendingUp,
   CheckCircle2,
+  Landmark,
   Loader2,
 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useOrders } from "@/hooks/use-orders";
 import { Link } from "wouter";
-import { useCurrentCash } from "@/hooks/use-cash";
+import { useCurrentCash,useRecountCash } from "@/hooks/use-cash";
 import { useWithdrawCash,useWithdrawalHistory,useDepositCash,useDepositHistory } from "@/hooks/use-withdraw";
 import { DenominationSelector } from "@/components/DenominationSelector";
-
-
-
+import { useSettings } from "@/hooks/use-settings";
+import { usePartners } from "@/hooks/use-partners";
+import { useLocation } from "wouter";
+import { useBankBalance,useBankTransaction } from "@/hooks/use-bank";
 
 export default function Dashboard() {
   const { user } = useAuthStore();
 const isAdmin = user?.role === "ADMIN";
-  const { data: currentDay, isLoading } = useCurrentBusinessDay();
+
+const { data: settings } = useSettings();
+const [, navigate] = useLocation();
+
+const useBusinessDay = settings?.use_business_day ?? false;
+
+const enableCashRecount = settings?.enable_cash_recount ?? true;
+
+const { data: currentDay, isLoading } = useCurrentBusinessDay(useBusinessDay);
+
+const { data: balance } = useBankBalance();
+const { mutate: bankTx } = useBankTransaction();
+
+const { data: partners } = usePartners()
+const [withdrawPartnerId,setWithdrawPartnerId] = useState<number | null>(null)
+const [depositPartnerId,setDepositPartnerId] = useState<number | null>(null)
+
   const { mutate: openDay, isPending: isOpening } = useOpenBusinessDay();
   const { mutate: closeDay, isPending: isClosing } = useCloseBusinessDay();
   const { data: orders } = useOrders();
   const { toast } = useToast();
-  const { data: drawerCash } = useCurrentCash(currentDay?.id);
-  const { data: expectedData } = useExpectedCash();
+  const businessDayId = useBusinessDay ? currentDay?.id : null;
+  const { data: drawerCash } = useCurrentCash(businessDayId);
+  const { mutate: recountCash } = useRecountCash()
+  const { data: expectedData } = useExpectedCash(useBusinessDay);
 
   const [withdrawReason, setWithdrawReason] = useState("");
   const [withdrawDescription, setWithdrawDescription] = useState("");
@@ -55,8 +76,9 @@ const isAdmin = user?.role === "ADMIN";
   const [withdrawHistoryOpen, setWithdrawHistoryOpen] = useState(false);
 const [depositHistoryOpen, setDepositHistoryOpen] = useState(false);
 
-const { data: withdrawHistory } = useWithdrawalHistory(currentDay?.id);
-const { data: depositHistory } = useDepositHistory(currentDay?.id);
+const { data: withdrawHistory } = useWithdrawalHistory(businessDayId);
+const { data: depositHistory } = useDepositHistory(businessDayId);
+
   
 
   const [openDialogOpen, setOpenDialogOpen] = useState(false);
@@ -75,6 +97,7 @@ const { mutate: depositCash } = useDepositCash();
   { note: 2, qty: 0 },
   { note: 1, qty: 0 },
 ]);
+
 
 
 
@@ -143,6 +166,17 @@ const { mutate: depositCash } = useDepositCash();
 
 const DENOMS = [500, 200, 100, 50, 20, 10, 5, 2, 1];
 
+const [recountOpen, setRecountOpen] = useState(false)
+
+const [recountBreakdown, setRecountBreakdown] = useState(
+  DENOMS.map(d => ({ note: d, qty: 0 }))
+)
+
+const recountTotal = recountBreakdown.reduce(
+  (sum, n) => sum + n.note * n.qty,
+  0
+)
+
 const openingTotal = denominations.reduce(
   (sum, n) => sum + n.note * n.qty,
   0
@@ -180,7 +214,37 @@ const depositTotal = depositBreakdown.reduce(
   0
 );
 
+const [bankDepositOpen, setBankDepositOpen] = useState(false);
+const [bankWithdrawOpen, setBankWithdrawOpen] = useState(false);
+const [cashToBankOpen, setCashToBankOpen] = useState(false);
+const [bankToCashOpen, setBankToCashOpen] = useState(false);
 
+const [bankAmount, setBankAmount] = useState("");
+const [bankDesc, setBankDesc] = useState("");
+
+const handleRecount = () => {
+
+  const hasCash = recountBreakdown.some(n => n.qty > 0)
+
+  if (!hasCash) {
+    toast({
+      title: "Invalid Count",
+      description: "Please enter at least one denomination.",
+      variant: "destructive"
+    })
+    return
+  }
+
+  recountCash(
+    { breakdown: recountBreakdown },
+    {
+      onSuccess: () => {
+        setRecountOpen(false)
+        setRecountBreakdown(DENOMS.map(d => ({ note: d, qty: 0 })))
+      }
+    }
+  )
+}
 
 const handleWithdraw = () => {
   const hasCash = withdrawBreakdown.some(n => n.qty > 0);
@@ -214,7 +278,8 @@ if (withdrawReason === "Other" && !withdrawDescription.trim()) {
 
   withdrawCash(
     {
-      businessDayId: currentDay?.id,
+      businessDayId: businessDayId,
+     partnerId: withdrawPartnerId ?? null,
       breakdown: withdrawBreakdown,
       reason: withdrawReason,
       description: withdrawDescription,
@@ -225,6 +290,7 @@ if (withdrawReason === "Other" && !withdrawDescription.trim()) {
   setWithdrawReason("");
   setWithdrawDescription("");
   setWithdrawBreakdown(DENOMS.map(d => ({ note: d, qty: 0 })));
+  setWithdrawPartnerId(null)
 },
     }
   );
@@ -243,6 +309,9 @@ if (withdrawReason === "Other" && !withdrawDescription.trim()) {
 const difference = closingTotal - expectedCash;
 const hasMismatch = Math.abs(difference) > 0.01;
 
+
+const showDashboard = !useBusinessDay || currentDay;
+
   return (
     <div className="flex bg-gray-50 min-h-screen">
       <Sidebar />
@@ -253,16 +322,18 @@ const hasMismatch = Math.abs(difference) > 0.01;
           <div>
             <h1 className="text-3xl font-bold">Dashboard</h1>
             <p className="text-muted-foreground mt-1">
-  Business Day: {currentDay?.date}
+Business Day: {useBusinessDay ? currentDay?.date : new Date().toLocaleDateString()}
 </p>
           </div>
 
           <div className="flex items-center gap-4">
             <div
               className={`px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 ${
-                currentDay
-                  ? "bg-green-100 text-green-700 border border-green-200"
-                  : "bg-amber-100 text-amber-700 border border-amber-200"
+                useBusinessDay
+  ? currentDay
+    ? "bg-green-100 text-green-700 border border-green-200"
+    : "bg-amber-100 text-amber-700 border border-amber-200"
+  : "bg-blue-100 text-blue-700 border border-blue-200"
               }`}
             >
               {currentDay ? (
@@ -270,7 +341,11 @@ const hasMismatch = Math.abs(difference) > 0.01;
               ) : (
                 <AlertCircle className="w-4 h-4" />
               )}
-              {currentDay ? "Business Open" : "Business Closed"}
+              {useBusinessDay
+  ? currentDay
+    ? "Business Open"
+    : "Business Closed"
+  : "Using Real Date"}
             </div>
 
 
@@ -282,7 +357,7 @@ const hasMismatch = Math.abs(difference) > 0.01;
         </div>
 
         {/* CONTENT */}
-        {currentDay ? (
+        {showDashboard ? (
           <>
     {isAdmin && (
           <>
@@ -314,7 +389,19 @@ const hasMismatch = Math.abs(difference) > 0.01;
                 }`}
                 icon={TrendingUp}
               />
-            </div>
+
+              <StatCard
+  title="Bank Balance"
+  value={`₹${Number(balance?.balance || 0).toLocaleString()}`}
+  icon={Landmark}
+  className={
+    Number(balance?.balance || 0) >= 0
+      ? "border-green-200 bg-green-50"
+      : "border-red-200 bg-red-50"
+  }
+/>
+
+                        </div>
           )}
 </>)}
           
@@ -375,6 +462,7 @@ const hasMismatch = Math.abs(difference) > 0.01;
   </div>
   )}
 
+ {useBusinessDay ? (
   <div
     onClick={() => setCloseDialogOpen(true)}
     className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
@@ -391,8 +479,34 @@ const hasMismatch = Math.abs(difference) > 0.01;
       </div>
     </div>
   </div>
+) : null}
+
+{enableCashRecount ? (
+  <div
+    onClick={() => setRecountOpen(true)}
+    className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
+  >
+    <div className="flex items-center gap-4">
+      <div className="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center">
+        <DollarSign className="w-7 h-7" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-lg">Recount Cash</h3>
+        <p className="text-sm text-muted-foreground">
+          Recalculate drawer cash
+        </p>
+      </div>
+    </div>
+  </div>
+) : null}
 {isAdmin && (<div
-  onClick={() => setWithdrawHistoryOpen(true)}
+  onClick={() => {
+  if (settings?.enable_partners) {
+    navigate("/withdrawals-history");
+  } else {
+    setWithdrawHistoryOpen(true);
+  }
+}}
   className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
 >
   <div className="flex items-center gap-4">
@@ -409,7 +523,13 @@ const hasMismatch = Math.abs(difference) > 0.01;
 </div>
 )}
 {isAdmin && (<div
-  onClick={() => setDepositHistoryOpen(true)}
+  onClick={() => {
+  if (settings?.enable_partners) {
+    navigate("/withdrawals-history");
+  } else {
+    setDepositHistoryOpen(true);
+  }
+}}
   className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
 >
   <div className="flex items-center gap-4">
@@ -426,6 +546,101 @@ const hasMismatch = Math.abs(difference) > 0.01;
 </div>
 )}
 
+
+{isAdmin && (
+  <div
+    onClick={() => setBankDepositOpen(true)}
+    className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
+  >
+    <div className="flex items-center gap-4">
+      <div className="w-14 h-14 bg-green-100 text-green-700 rounded-full flex items-center justify-center">
+        <Landmark className="w-7 h-7" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-lg">Bank Deposit</h3>
+        <p className="text-sm text-muted-foreground">
+          Add money to bank account
+        </p>
+      </div>
+    </div>
+  </div>
+)}
+
+{isAdmin && (
+  <div
+    onClick={() => setBankWithdrawOpen(true)}
+    className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
+  >
+    <div className="flex items-center gap-4">
+      <div className="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center">
+        <Landmark className="w-7 h-7" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-lg">Bank Withdraw</h3>
+        <p className="text-sm text-muted-foreground">
+          Withdraw money from bank
+        </p>
+      </div>
+    </div>
+  </div>
+)}
+
+{isAdmin && (
+  <div
+    onClick={() => setCashToBankOpen(true)}
+    className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
+  >
+    <div className="flex items-center gap-4">
+      <div className="w-14 h-14 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
+        <Landmark className="w-7 h-7" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-lg">Cash → Bank</h3>
+        <p className="text-sm text-muted-foreground">
+          Move cash to bank account
+        </p>
+      </div>
+    </div>
+  </div>
+)}
+
+{isAdmin && (
+  <div
+    onClick={() => setBankToCashOpen(true)}
+    className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
+  >
+    <div className="flex items-center gap-4">
+      <div className="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center">
+        <Landmark className="w-7 h-7" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-lg">Bank → Cash</h3>
+        <p className="text-sm text-muted-foreground">
+          Withdraw cash from bank
+        </p>
+      </div>
+    </div>
+  </div>
+)}
+
+{isAdmin && (
+  <div
+    onClick={() => navigate("/bank-history")}
+    className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg border"
+  >
+    <div className="flex items-center gap-4">
+      <div className="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center">
+        <Landmark className="w-7 h-7" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-lg">Bank History</h3>
+        <p className="text-sm text-muted-foreground">
+          View all transactions
+        </p>
+      </div>
+    </div>
+  </div>
+)}
 </div>
 
 
@@ -605,6 +820,33 @@ const hasMismatch = Math.abs(difference) > 0.01;
     <option>Investment Transfer</option>
     <option>Other</option>
   </select>
+
+  {settings?.enable_partners && (
+<div className="mt-4">
+
+<label className="block text-sm font-medium mb-2">
+Select Partner
+</label>
+
+<select
+className="w-full border rounded-md p-2"
+value={withdrawPartnerId ?? ""}
+onChange={(e)=>setWithdrawPartnerId(Number(e.target.value))}
+>
+
+<option value="">Select Partner</option>
+
+{partners?.map((p:any)=>(
+<option key={p.id} value={p.id}>
+{p.name}
+</option>
+))}
+
+</select>
+
+</div>
+)}
+
   <div className="mt-4">
   <label className="block text-sm font-medium mb-2">
     Description {withdrawReason === "Other" && <span className="text-red-500">*</span>}
@@ -659,7 +901,31 @@ const hasMismatch = Math.abs(difference) > 0.01;
     <div className="text-lg font-bold pt-4 text-center">
       Total Deposit: ₹{depositTotal}
     </div>
+    {settings?.enable_partners && (
+<div className="mt-4">
 
+<label className="block text-sm font-medium mb-2">
+Select Partner
+</label>
+
+<select
+className="w-full border rounded-md p-2"
+value={depositPartnerId ?? ""}
+onChange={(e)=>setDepositPartnerId(Number(e.target.value))}
+>
+
+<option value="">Select Partner</option>
+
+{partners?.map((p:any)=>(
+<option key={p.id} value={p.id}>
+{p.name}
+</option>
+))}
+
+</select>
+
+</div>
+)}
     <DialogFooter>
       <Button variant="outline" onClick={() => setDepositOpen(false)}>
         Cancel
@@ -681,7 +947,8 @@ const hasMismatch = Math.abs(difference) > 0.01;
 
     depositCash(
       {
-        businessDayId: currentDay?.id,
+        businessDayId: businessDayId,
+        partnerId: depositPartnerId ?? null,
         breakdown: depositBreakdown,
         reason: "Drawer Refill",
       },
@@ -691,6 +958,8 @@ const hasMismatch = Math.abs(difference) > 0.01;
           setDepositBreakdown(
             DENOMS.map(d => ({ note: d, qty: 0 }))
           );
+  setDepositPartnerId(null)
+
         },
       }
     );
@@ -799,6 +1068,234 @@ const hasMismatch = Math.abs(difference) > 0.01;
   </DialogContent>
 </Dialog>
 
+<Dialog open={recountOpen} onOpenChange={setRecountOpen}>
+  <DialogContent className="max-w-3xl">
+
+    <DialogHeader>
+      <DialogTitle>Recount Drawer Cash</DialogTitle>
+      <DialogDescription>
+        Enter actual denominations currently inside drawer.
+      </DialogDescription>
+    </DialogHeader>
+
+    <DenominationSelector
+      breakdown={recountBreakdown}
+      setBreakdown={setRecountBreakdown}
+    />
+
+    <div className="text-xl font-bold text-center mt-6">
+      Total Cash: ₹{recountTotal}
+    </div>
+
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setRecountOpen(false)}>
+        Cancel
+      </Button>
+
+      <Button
+        className="bg-indigo-600 text-white"
+        onClick={handleRecount}
+      >
+        Update Drawer
+      </Button>
+    </DialogFooter>
+
+  </DialogContent>
+</Dialog>
+
+<Dialog open={bankDepositOpen} onOpenChange={setBankDepositOpen}>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Bank Deposit</DialogTitle>
+      <DialogDescription>Add money to bank account</DialogDescription>
+    </DialogHeader>
+
+    <Input
+      placeholder="Amount"
+      type="number"
+      value={bankAmount}
+      onChange={(e) => setBankAmount(e.target.value)}
+    />
+
+    <textarea
+      className="w-full border rounded-md p-2 mt-3"
+      placeholder="Description (optional)"
+      value={bankDesc}
+      onChange={(e) => setBankDesc(e.target.value)}
+    />
+
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setBankDepositOpen(false)}>
+        Cancel
+      </Button>
+
+      <Button
+        className="bg-green-600 text-white"
+        onClick={() => {
+          if (!bankAmount) return;
+
+          bankTx({
+            amount: Number(bankAmount),
+            type: "credit",
+            source: "owner_deposit",
+            description: bankDesc
+          });
+
+          setBankDepositOpen(false);
+          setBankAmount("");
+          setBankDesc("");
+        }}
+      >
+        Confirm
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+<Dialog open={bankWithdrawOpen} onOpenChange={setBankWithdrawOpen}>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Bank Withdraw</DialogTitle>
+      <DialogDescription>Withdraw money from bank</DialogDescription>
+    </DialogHeader>
+
+    <Input
+      placeholder="Amount"
+      type="number"
+      value={bankAmount}
+      onChange={(e) => setBankAmount(e.target.value)}
+    />
+
+    <textarea
+      className="w-full border rounded-md p-2 mt-3"
+      placeholder="Reason"
+      value={bankDesc}
+      onChange={(e) => setBankDesc(e.target.value)}
+    />
+
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setBankWithdrawOpen(false)}>
+        Cancel
+      </Button>
+
+      <Button
+        className="bg-red-600 text-white"
+        onClick={() => {
+          if (!bankAmount) return;
+
+          bankTx({
+            amount: Number(bankAmount),
+            type: "debit",
+            source: "owner_withdraw",
+            description: bankDesc
+          });
+
+          setBankWithdrawOpen(false);
+          setBankAmount("");
+          setBankDesc("");
+        }}
+      >
+        Confirm
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+<Dialog open={cashToBankOpen} onOpenChange={setCashToBankOpen}>
+  <DialogContent className="max-w-3xl">
+    <DialogHeader>
+      <DialogTitle>Cash → Bank</DialogTitle>
+      <DialogDescription>Move cash to bank</DialogDescription>
+    </DialogHeader>
+
+    <DenominationSelector
+      breakdown={withdrawBreakdown}
+      setBreakdown={setWithdrawBreakdown}
+    />
+
+    <div className="text-center font-bold mt-4">
+      Total: ₹{withdrawTotal}
+    </div>
+
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setCashToBankOpen(false)}>
+        Cancel
+      </Button>
+
+      <Button
+        className="bg-blue-600 text-white"
+        onClick={() => {
+          if (!withdrawTotal) return;
+
+          const denominationsObj: any = {};
+          withdrawBreakdown.forEach(d => {
+            if (d.qty > 0) denominationsObj[d.note] = d.qty;
+          });
+
+          bankTx({
+            amount: withdrawTotal,
+            type: "credit",
+            source: "cash_transfer",
+            denominations: denominationsObj
+          });
+
+          setCashToBankOpen(false);
+          setWithdrawBreakdown(DENOMS.map(d => ({ note: d, qty: 0 })));
+        }}
+      >
+        Transfer
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+<Dialog open={bankToCashOpen} onOpenChange={setBankToCashOpen}>
+  <DialogContent className="max-w-3xl">
+    <DialogHeader>
+      <DialogTitle>Bank → Cash</DialogTitle>
+      <DialogDescription>Withdraw cash from bank</DialogDescription>
+    </DialogHeader>
+
+    <DenominationSelector
+      breakdown={depositBreakdown}
+      setBreakdown={setDepositBreakdown}
+    />
+
+    <div className="text-center font-bold mt-4">
+      Total: ₹{depositTotal}
+    </div>
+
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setBankToCashOpen(false)}>
+        Cancel
+      </Button>
+
+      <Button
+        className="bg-indigo-600 text-white"
+        onClick={() => {
+          if (!depositTotal) return;
+
+          const denominationsObj: any = {};
+          depositBreakdown.forEach(d => {
+            if (d.qty > 0) denominationsObj[d.note] = d.qty;
+          });
+
+          bankTx({
+            amount: depositTotal,
+            type: "debit",
+            source: "bank_to_cash",
+            denominations: denominationsObj
+          });
+
+          setBankToCashOpen(false);
+          setDepositBreakdown(DENOMS.map(d => ({ note: d, qty: 0 })));
+        }}
+      >
+        Withdraw Cash
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
 
     </div>
 

@@ -14,10 +14,13 @@ import {
   CartesianGrid,
   ResponsiveContainer,
 } from "recharts";
+import { useSettings } from "@/hooks/use-settings";
 
 export default function WithdrawalHistory() {
   const [range, setRange] = useState<"weekly" | "monthly" | "custom">("weekly");
   const [mode, setMode] = useState<"withdrawal" | "deposit">("withdrawal");
+
+  const { data: settings } = useSettings();
 
   const today = new Date();
 
@@ -95,12 +98,12 @@ const netImpact = totalDeposits - totalWithdrawals;
   const exportCSV = () => {
     if (!data) return;
 
-    const headers = ["Date", "Amount", "Reason", "User"];
+    const headers = ["Date", "Amount", "Reason", "Owner"];
     const rows = data.map((w: any) => [
       new Date(w.created_at).toLocaleString(),
       w.amount,
       w.reason,
-      w.user_name || "-",
+      w.owner_name || "-"
     ]);
 
     const csv =
@@ -221,7 +224,7 @@ const netImpact = totalDeposits - totalWithdrawals;
                       <td>{new Date(w.created_at).toLocaleString()}</td>
                       <td>₹{w.amount}</td>
                       <td>{w.reason}</td>
-                      <td>{w.user_name || "-"}</td>
+                      <td>{w.owner_name || "-"}</td>
                     </tr>
                   ))}
                 </tbody>

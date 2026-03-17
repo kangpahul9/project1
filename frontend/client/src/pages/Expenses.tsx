@@ -40,11 +40,15 @@ import { useState,useEffect } from "react";
 import { format } from "date-fns";
 import { useVendorSummary } from "@/hooks/use-vendors";
 import { withApiBase } from "@/lib/api-base";
+import { usePartners } from "@/hooks/use-partners";
 
 export default function Expenses() {
   const { data: expenses, isLoading } = useExpenses();
   const { data: currentDay } = useCurrentBusinessDay();
   const { mutate: createExpense, isPending } = useCreateExpense();
+
+  const { data: partners } = usePartners();
+  const [partnerId,setPartnerId] = useState<number | null>(null);
 
   const uploadImage = useUploadExpenseImage();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -96,6 +100,12 @@ useEffect(() => {
   }
 }, [deductFromGalla, form.watch("paymentMode")]);
 
+useEffect(() => {
+  if (form.watch("paymentMode") === "cash" && deductFromGalla) {
+    setPartnerId(null);
+  }
+}, [deductFromGalla, form.watch("paymentMode")]);
+
   const onSubmit = (data: any) => {
   if (!currentDay) return;
 
@@ -119,6 +129,7 @@ const payload = {
   ...data,
   vendorId: data.vendorId ? Number(data.vendorId) : null,
 staff_id: data.staff_id ? Number(data.staff_id) : null,
+partnerId,
   is_paid: data.isPaid,
   businessDayId: currentDay.id,
   document_url: uploadedUrl,
@@ -131,28 +142,29 @@ staff_id: data.staff_id ? Number(data.staff_id) : null,
 
   if (editingExpense) {
     updateExpense(
-      { id: editingExpense.id, ...payload },
-      {
-        onSuccess: () => {
-          setOpen(false);
-          setEditingExpense(null);
-          form.reset();
-        },
-      }
-    );
+  { id: editingExpense.id, ...payload },
+  {
+    onSuccess: () => {
+      setOpen(false);
+      setEditingExpense(null);
+      form.reset();
+      setPartnerId(null);
+    },
+  }
+);
   } else {
     createExpense(payload, {
-      onSuccess: () => {
-        setOpen(false);
-        form.reset();
-      },
-    });
+  onSuccess: () => {
+    setOpen(false);
+    form.reset();
+    setPartnerId(null);
+  },
+});
   }
 };
 const handleEdit = (expense: any) => {
   setEditingExpense(expense);
   setOpen(true);
-
   form.reset({
   description: expense.description,
   amount: Number(expense.amount),
@@ -163,7 +175,7 @@ staff_id: expense.staff_id?.toString() || "",
   utilityType: expense.utility_type || "",
   isPaid: expense.is_paid || false,
 });
-
+  setPartnerId(expense.partner_id || null)
   setUploadedUrl(expense.document_url || null);
 };
   const selectedCategory = form.watch("category");
@@ -236,6 +248,7 @@ staff_id: expense.staff_id?.toString() || "",
                         </FormItem>
                       )}
                     />
+                    
                     <FormField
                       control={form.control}
                       name="category"
@@ -376,6 +389,34 @@ staff_id: expense.staff_id?.toString() || "",
                         </FormItem>
                       )}
                     />
+  {partners && partners.length > 0 &&
+ !(form.watch("paymentMode") === "cash" && deductFromGalla) && (
+  <div>
+    <label className="text-sm font-medium">Paid By</label>
+
+    <Select
+      value={partnerId ? String(partnerId) : "staff"}
+      onValueChange={(value) => {
+        if (value === "staff") setPartnerId(null);
+        else setPartnerId(Number(value));
+      }}
+    >
+      <SelectTrigger>
+        <SelectValue placeholder="Select payer" />
+      </SelectTrigger>
+
+      <SelectContent>
+
+        {partners.map((p: any) => (
+          <SelectItem key={p.id} value={String(p.id)}>
+            {p.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  </div>
+)}
+
                     <FormField
   control={form.control}
   name="isPaid"
@@ -543,9 +584,16 @@ e.staff_name?.toLowerCase().includes(term)
   <span className="inline-block mt-1 px-2 py-0.5 text-s bg-blue-50 text-blue-700 rounded-full"> 
     {expense.vendor_name}
   </span>
-)} {expense.category === "salary" && expense.staff_name && (
+  
+)}
+ {expense.category === "salary" && expense.staff_name && (
   <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-green-50 text-green-700 rounded-full">
     {expense.staff_name}
+  </span>
+)}
+{expense.partner_name && (
+  <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-purple-50 text-purple-700 rounded-full">
+    {expense.partner_name}
   </span>
 )}</h3>
       

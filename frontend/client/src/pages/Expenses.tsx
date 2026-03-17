@@ -18,6 +18,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useSettings } from "@/hooks/use-settings";
 import {
   Select,
   SelectContent,
@@ -44,7 +45,6 @@ import { usePartners } from "@/hooks/use-partners";
 
 export default function Expenses() {
   const { data: expenses, isLoading } = useExpenses();
-  const { data: currentDay } = useCurrentBusinessDay();
   const { mutate: createExpense, isPending } = useCreateExpense();
 
   const { data: partners } = usePartners();
@@ -60,7 +60,23 @@ export default function Expenses() {
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const { mutate: deleteExpense } = useDeleteExpense();
+  const { data: settings, isLoading: settingsLoading } = useSettings();
+
+const useBusinessDay = settings?.use_business_day ?? false;
 const { mutate: updateExpense } = useUpdateExpense();
+
+
+
+const { data: currentDay, isLoading: dayLoading } =
+  useCurrentBusinessDay(useBusinessDay);
+
+  if (settingsLoading || dayLoading) {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      Loading...
+    </div>
+  );
+}
 
 const [editingExpense, setEditingExpense] = useState<any>(null);
   const form = useForm({
@@ -107,7 +123,12 @@ useEffect(() => {
 }, [deductFromGalla, form.watch("paymentMode")]);
 
   const onSubmit = (data: any) => {
-  if (!currentDay) return;
+  const businessDayId = useBusinessDay ? currentDay?.id : null;
+
+if (useBusinessDay && !businessDayId) {
+  alert("Please open business day first");
+  return;
+}
 
   if (!data.description.trim()) {
     alert("Description is required");
@@ -196,7 +217,7 @@ staff_id: expense.staff_id?.toString() || "",
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button
-                disabled={!currentDay}
+                disabled={useBusinessDay && !currentDay}
                 className="shadow-lg shadow-primary/20"
               >
                 <Plus className="w-4 h-4 mr-2" />

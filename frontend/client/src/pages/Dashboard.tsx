@@ -50,19 +50,13 @@ const { data: settings, isLoading: settingsLoading } = useSettings();
 const [, navigate] = useLocation();
 
 
-const useBusinessDay = settings?.use_business_day ?? false;
+const isReady = !settingsLoading;
+const useBusinessDay = !!settings?.use_business_day;
+
+const { data: currentDay, isLoading: dayLoading } =
+  useCurrentBusinessDay(useBusinessDay, isReady);
 
 const enableCashRecount = settings?.enable_cash_recount ?? true;
-
-const { data: currentDay, isLoading } = useCurrentBusinessDay(useBusinessDay);
-
-if (settingsLoading || isLoading) {
-  return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Loader2 className="w-8 h-8 animate-spin" />
-    </div>
-  );
-}
 
 const { data: balance } = useBankBalance();
 const { mutate: bankTx } = useBankTransaction();
@@ -108,6 +102,14 @@ const { mutate: depositCash } = useDepositCash();
   { note: 1, qty: 0 },
 ]);
 
+
+if (!isReady || dayLoading) {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <Loader2 className="w-8 h-8 animate-spin" />
+    </div>
+  );
+}
 
 
 

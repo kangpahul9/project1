@@ -26,6 +26,7 @@ import {attachBusinessDay} from "./middleware/attachBusinessDay.js";
 import partnersRoutes from "./routes/partners.js";
 import bankRoutes from "./routes/bank.js";
 import billingRoutes from "./routes/billing.js"
+import { checkSubscription } from "./middleware/checkSubscription.js";
 
 
 
@@ -71,6 +72,11 @@ apiRouter.use(authenticate);
 apiRouter.use(loadSettings);
 apiRouter.use(attachBusinessDay);
 
+apiRouter.use("/billing", billingRoutes);
+apiRouter.use("/settings", settingsRoutes);
+
+apiRouter.use(checkSubscription);
+
 // ALL PROTECTED ROUTES
 apiRouter.use("/menu", menuRoutes);
 apiRouter.use("/business-days", businessDayRoutes);
@@ -83,10 +89,8 @@ apiRouter.use("/vendors", vendorsRoutes);
 apiRouter.use("/staff", staffRoutes);
 apiRouter.use("/menu/categories", menuCategoriesRoutes);
 apiRouter.use("/restaurant", restaurantRoutes);
-apiRouter.use("/settings", settingsRoutes);
 apiRouter.use("/partners", partnersRoutes);
 apiRouter.use("/bank", bankRoutes);
-apiRouter.use("/billing", billingRoutes);
 
 
 

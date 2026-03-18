@@ -368,7 +368,6 @@ AND NOT EXISTS (
 ALTER TABLE orders
 ADD COLUMN discount NUMERIC(10,2) DEFAULT 0;
 
---> new
 CREATE TABLE restaurants (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   restaurant_uid TEXT UNIQUE NOT NULL,
@@ -809,3 +808,8 @@ ON shifts (restaurant_id, date);
 ALTER TABLE restaurants ADD COLUMN subscription_status TEXT;
 ALTER TABLE restaurants ADD COLUMN stripe_customer_id TEXT;
 ALTER TABLE restaurants ADD COLUMN stripe_subscription_id TEXT;
+
+
+--> new
+ALTER TABLE restaurants
+ADD COLUMN subscription_valid_till TIMESTAMP;

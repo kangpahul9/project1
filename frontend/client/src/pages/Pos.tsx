@@ -257,6 +257,8 @@ export default function Pos() {
   const completeOrder = (method: "cash" | "upi" | "eftpos" | "unpaid") => {
     if (!currentDay || !user) return;
 
+
+    
     /* ===============================
      UNPAID ORDER SETTLEMENT FLOW
   =============================== */

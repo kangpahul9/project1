@@ -45,18 +45,14 @@ export default function Dashboard() {
   const { user } = useAuthStore();
 const isAdmin = user?.role === "ADMIN";
 
-const { data: settings, isLoading: settingsLoading } = useSettings();
-
+const { data: settings } = useSettings();
 const [, navigate] = useLocation();
 
-
-const isReady = !settingsLoading;
-const useBusinessDay = !!settings?.use_business_day;
-
-const { data: currentDay, isLoading: dayLoading } =
-  useCurrentBusinessDay(useBusinessDay, isReady);
+const useBusinessDay = settings?.use_business_day ?? false;
 
 const enableCashRecount = settings?.enable_cash_recount ?? true;
+
+const { data: currentDay, isLoading } = useCurrentBusinessDay(useBusinessDay);
 
 const { data: balance } = useBankBalance();
 const { mutate: bankTx } = useBankTransaction();
@@ -102,14 +98,6 @@ const { mutate: depositCash } = useDepositCash();
   { note: 1, qty: 0 },
 ]);
 
-
-if (!isReady || dayLoading) {
-  return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Loader2 className="w-8 h-8 animate-spin" />
-    </div>
-  );
-}
 
 
 
@@ -309,14 +297,20 @@ if (withdrawReason === "Other" && !withdrawDescription.trim()) {
 };
 
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   const expectedCash = expectedData?.expectedCash ?? 0;
 const difference = closingTotal - expectedCash;
 const hasMismatch = Math.abs(difference) > 0.01;
 
 
-const showDashboard = useBusinessDay
-  ? !!currentDay
-  : true;
+const showDashboard = !useBusinessDay || currentDay;
 
   return (
     <div className="flex bg-gray-50 min-h-screen">

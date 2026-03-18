@@ -56,7 +56,7 @@ const [email, setEmail] = useState("");
             <Building2 className="w-7 h-7 text-white" strokeWidth={1.5} />
           </div>
           <h1 className="text-3xl font-semibold text-gray-900">Welcome</h1>
-          <p className="mt-1.5 text-sm text-gray-600">Sign in to your restaurant terminal</p>
+          <p className="mt-1.5 text-sm text-gray-600">Sign in to your Business terminal</p>
         </div>
 
         {/* Form Card */}

@@ -16,7 +16,7 @@ export function useCreateCheckout() {
 
   return useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/billing/create-checkout`, {
+      const res = await fetch(withApiBase("/billing/create-checkout"), {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({  }),

@@ -72,7 +72,7 @@ router.put("/", authenticate, async (req, res) => {
         enable_whatsapp = $6,
         enable_email = $7,
         enable_partners = $8,
-        upi_id = $9
+        upi_id = $9,
         updated_at = NOW()
       WHERE restaurant_id = $10
       RETURNING *

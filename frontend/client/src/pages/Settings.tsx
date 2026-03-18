@@ -9,7 +9,7 @@ import {useCreatePartner, useDeletePartner, usePartners, useUpdatePartner} from 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PartnerManager } from "./PartnerManager";
-import { useCreateCheckout } from "@/hooks/use-billing";
+import { useCreateCheckout, useSubscription } from "@/hooks/use-billing";
 
 import { useState, useEffect } from "react";
 
@@ -19,6 +19,7 @@ export default function Settings() {
   const { mutate: updateSettings } = useUpdateSettings();
 
   const { data: partners } = usePartners();
+  const { data, isLoading } = useSubscription();
 
   const { data: comm } = useCommunicationSettings();
   const { mutate: updateComm } = useUpdateCommunicationSettings();
@@ -54,14 +55,40 @@ useEffect(() => {
 
         <h1 className="text-3xl font-bold mb-6">Settings</h1>
 
-<Button
-  disabled={isPending}
-  onClick={() => {
-    createCheckout();
-  }}
->
-  {isPending ? "Redirecting..." : "Upgrade to Pro (₹1049/month)"}
-</Button>
+{isLoading ? (
+  <p className="text-sm text-gray-500">Checking subscription...</p>
+) : data?.subscription_status === "active" ? (
+  <div className="p-4 rounded-xl bg-green-50 border border-green-200">
+    <p className="text-green-700 font-semibold">
+      KangPOS Pro Active ✅
+    </p>
+    <p className="text-sm text-green-600 mt-1">
+      Valid till:{" "}
+      {data.subscription_valid_till
+        ? new Date(data.subscription_valid_till).toLocaleDateString()
+        : "N/A"}
+    </p>
+    <p className="text-xs text-gray-500 mt-2">
+      To cancel, contact: +61 434 947 020
+    </p>
+  </div>
+) : (
+  <div className="p-4 rounded-xl bg-red-50 border border-red-200">
+    <p className="text-red-700 font-semibold">
+      Subscription expired ❌
+    </p>
+    <p className="text-sm text-red-600 mt-1">
+      Please recharge to continue using KangPOS
+    </p>
+
+    <button
+      onClick={() => createCheckout()}
+      className="mt-3 px-4 py-2 bg-violet-600 text-white rounded-lg"
+    >
+      Recharge Now
+    </button>
+  </div>
+)}
 
         {/* SYSTEM SETTINGS */}
 

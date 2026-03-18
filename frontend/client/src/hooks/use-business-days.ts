@@ -14,19 +14,19 @@ function getAuthHeaders() {
 /* =============================
    GET CURRENT BUSINESS DAY
 ============================= */
-export function useCurrentBusinessDay(useBusinessDay: boolean) {
+export function useCurrentBusinessDay(useBusinessDay: boolean, enabled: boolean) {
   return useQuery({
-    queryKey: ["/business-days/current"],
-    enabled: useBusinessDay, // 🚨 important
+    queryKey: ["/business-days/current", useBusinessDay],
+    enabled: enabled && useBusinessDay,
     queryFn: async () => {
       const res = await fetch(`${API_BASE}/business-days/current`, {
         headers: getAuthHeaders(),
       });
 
       if (res.status === 204) return null;
-      if (!res.ok) throw new Error("Failed to fetch current business day");
+      if (!res.ok) throw new Error("Failed");
 
-      return await res.json();
+      return res.json();
     },
   });
 }

@@ -40,3 +40,22 @@ export function useCreateCheckout() {
     },
   });
 }
+
+export function useSubscription() {
+  return useQuery({
+    queryKey: ["subscription"],
+    queryFn: async () => {
+      const token = localStorage.getItem("token");
+
+      const res = await fetch(withApiBase("/billing/subscription"), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) throw new Error("Failed to fetch subscription");
+
+      return res.json();
+    },
+  });
+}

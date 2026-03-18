@@ -809,7 +809,8 @@ ALTER TABLE restaurants ADD COLUMN subscription_status TEXT;
 ALTER TABLE restaurants ADD COLUMN stripe_customer_id TEXT;
 ALTER TABLE restaurants ADD COLUMN stripe_subscription_id TEXT;
 
-
---> new
 ALTER TABLE restaurants
 ADD COLUMN subscription_valid_till TIMESTAMP;
+
+--> new
+ALTER TABLE expenses ADD COLUMN expense_date DATE;

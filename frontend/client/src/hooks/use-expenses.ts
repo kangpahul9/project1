@@ -103,17 +103,31 @@ export function useUpdateExpense() {
         body: JSON.stringify(expense),
       });
 
-      if (!res.ok) throw new Error("Failed to update expense");
-      return res.json();
+      const data = await res.json(); // ✅ always read
+
+      if (!res.ok) {
+        console.error("UPDATE ERROR:", data); // 🔥 IMPORTANT
+        throw new Error(data.message || "Update failed");
+      }
+
+      return data;
     },
+
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       queryClient.invalidateQueries({ queryKey: ["vendors-summary"] });
       toast({ title: "Expense updated" });
     },
+
+    onError: (err: any) => {
+      toast({
+        title: "Error",
+        description: err.message || "Update failed",
+        variant: "destructive",
+      });
+    },
   });
 }
-
 export function useDeleteExpense() {
   const queryClient = useQueryClient();
   const { toast } = useToast();

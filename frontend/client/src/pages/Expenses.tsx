@@ -73,6 +73,7 @@ const [editingExpense, setEditingExpense] = useState<any>(null);
   utilityType: "",
   isPaid: false,
   staff_id: "",
+  date: new Date().toISOString().slice(0, 10),
 },
   });
 
@@ -127,6 +128,9 @@ useEffect(() => {
 
 const payload = {
   ...data,
+  date: data.date
+  ? new Date(data.date).toISOString().slice(0, 10)
+  : new Date().toISOString().slice(0, 10),
   vendorId: data.vendorId ? Number(data.vendorId) : null,
 staff_id: data.staff_id ? Number(data.staff_id) : null,
 partnerId,
@@ -147,7 +151,17 @@ partnerId,
     onSuccess: () => {
       setOpen(false);
       setEditingExpense(null);
-      form.reset();
+      form.reset({
+  description: "",
+  amount: 0,
+  category: "supplies",
+  paymentMode: "online",
+  vendorId: "",
+  utilityType: "",
+  isPaid: false,
+  staff_id: "",
+  date: new Date().toISOString().slice(0, 10), // ✅ KEEP TODAY
+});
       setPartnerId(null);
     },
   }
@@ -174,6 +188,9 @@ const handleEdit = (expense: any) => {
 staff_id: expense.staff_id?.toString() || "",
   utilityType: expense.utility_type || "",
   isPaid: expense.is_paid || false,
+date: expense.expense_date
+  ? expense.expense_date
+  : new Date(expense.created_at).toISOString().slice(0, 10),
 });
   setPartnerId(expense.partner_id || null)
   setUploadedUrl(expense.document_url || null);
@@ -249,6 +266,23 @@ staff_id: expense.staff_id?.toString() || "",
                       )}
                     />
                     
+                    <FormField
+  control={form.control}
+  name="date"
+  render={({ field }) => (
+    <FormItem>
+      <FormLabel>Date</FormLabel>
+      <FormControl>
+        <Input
+          type="date"
+          max={new Date().toISOString().slice(0, 10)} // 🚫 no future
+          {...field}
+        />
+      </FormControl>
+    </FormItem>
+  )}
+/>
+
                     <FormField
                       control={form.control}
                       name="category"
@@ -389,8 +423,10 @@ staff_id: expense.staff_id?.toString() || "",
                         </FormItem>
                       )}
                     />
-  {partners && partners.length > 0 &&
- !(form.watch("paymentMode") === "cash" && deductFromGalla) && (
+  {partners &&
+ partners.length > 0 &&
+ form.watch("paymentMode") === "cash" &&   // ✅ ONLY CASH
+ !deductFromGalla && (                     // ✅ AND NOT GALLA
   <div>
     <label className="text-sm font-medium">Paid By</label>
 
@@ -406,7 +442,6 @@ staff_id: expense.staff_id?.toString() || "",
       </SelectTrigger>
 
       <SelectContent>
-
         {partners.map((p: any) => (
           <SelectItem key={p.id} value={String(p.id)}>
             {p.name}
@@ -599,8 +634,21 @@ e.staff_name?.toLowerCase().includes(term)
       
 
       <p className="text-sm text-muted-foreground">
-        {format(new Date(expense.created_at), "MMM d, yyyy")}
-      </p>
+  {(() => {
+    const rawDate = expense.expense_date || expense.created_at;
+
+    if (!rawDate) return "—"; // ✅ fallback safe
+
+    const safeDate =
+      rawDate.length === 10
+        ? new Date(rawDate + "T00:00:00")
+        : new Date(rawDate);
+
+    return isNaN(safeDate.getTime())
+      ? "—"
+      : format(safeDate, "MMM d, yyyy");
+  })()}
+</p>
 
       <p className="text-xs text-gray-500 capitalize">
   {expense.category}
@@ -704,7 +752,18 @@ e.staff_name?.toLowerCase().includes(term)
     setOpen(val);
     if (!val) {
       setEditingExpense(null);
-      form.reset();
+      form.reset({
+        description: "",
+        amount: 0,
+        category: "supplies",
+        paymentMode: "online",
+        vendorId: "",
+        utilityType: "",
+        isPaid: false,
+        staff_id: "",
+        date: new Date().toISOString().slice(0, 10), // ✅ FIX
+      });
+      setPartnerId(null);
     }
   }}
 ></Dialog>

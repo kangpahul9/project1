@@ -53,7 +53,7 @@ export function Sidebar() {
         <h1 className="text-2xl font-bold font-display bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
           KangPOS
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">Continental Dhaba</p>
+        <p className="text-sm text-muted-foreground mt-1">Your Business Handler</p>
       </div>
 
       <nav className="flex-1 px-4 space-y-2">

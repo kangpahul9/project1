@@ -26,7 +26,8 @@ router.post("/", authenticate, async (req, res) => {
   deduct_from_galla,
   denominations,
   source,
-  partnerId
+  partnerId,
+  date
 } = req.body;
 
 if (!amount || !category || !paymentMode) {
@@ -40,6 +41,10 @@ if (category === "supplies" && !vendorId) {
 if (category === "salary" && !staff_id) {
   return res.status(400).json({ message: "Staff member required for salary expense" });
 }
+
+const expenseDate = date
+  ? new Date(date)
+  : new Date();
 
     // 🔥 ENFORCE CASH RULE
    
@@ -165,9 +170,10 @@ withdrawalId = withdrawalRes.rows[0].id;
   staff_id,
   document_url,
   is_paid,
-  source
+  source,
+  expense_date
 )
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 RETURNING *
 `,
 [
@@ -183,7 +189,8 @@ RETURNING *
   staff_id || null,
   document_url || null,
   is_paid || false,
-  source || "manual"
+  source || "manual",
+  expenseDate
 ]
 );
 
@@ -276,7 +283,7 @@ LEFT JOIN vendors v
 LEFT JOIN partners p
   ON e.partner_id = p.id AND p.restaurant_id = $1
 WHERE e.restaurant_id = $1
-ORDER BY e.created_at DESC
+ORDER BY COALESCE(e.expense_date, e.created_at) DESC
     `
     , [req.restaurantId]);
 
@@ -297,8 +304,7 @@ router.put("/:id", authenticate, requireAdmin,async (req, res) => {
 
   try {
     const { id } = req.params;
-    const { amount, category, description, paymentMode, vendorId, is_paid,partnerId } = req.body;
-
+const { amount, category, description, paymentMode, vendorId, is_paid, partnerId, date, staff_id } = req.body;
     await client.query("BEGIN");
 
     const expenseRes = await client.query(
@@ -323,6 +329,11 @@ router.put("/:id", authenticate, requireAdmin,async (req, res) => {
       await client.query("ROLLBACK");
       return res.status(400).json({ message: "Cannot unpay settled expense" });
     }
+
+    const expenseDate = date
+  ? new Date(date)
+  : expense.expense_date || new Date();
+
 
     let amountPaid = expense.amount_paid;
     let paidAt = expense.paid_at;
@@ -425,31 +436,35 @@ router.put("/:id", authenticate, requireAdmin,async (req, res) => {
     const result = await client.query(
       `
       UPDATE expenses
-      SET amount = $1,
-          category = $2,
-          description = $3,
-          payment_method = $4,
-          vendor_id = $5,
-          is_paid = $6,
-          partner_id = $7,
-          amount_paid = $8,
-          paid_at = $9
-      WHERE id = $10 AND restaurant_id = $11
-      RETURNING *
+SET amount = $1,
+    category = $2,
+    description = $3,
+    payment_method = $4,
+    vendor_id = $5,
+    is_paid = $6,
+    partner_id = $7,
+    amount_paid = $8,
+    paid_at = $9,
+    expense_date = $10,
+    staff_id = $11
+WHERE id = $12 AND restaurant_id = $13
+RETURNING *
       `,
       [
-        amount,
-        category,
-        description || null,
-        paymentMode,
-        vendorId || null,
-        is_paid,
-        partnerId || req.user.id,
-        amountPaid,
-        paidAt,
-        id, 
-        req.restaurantId
-      ]
+  amount,
+  category,
+  description || null,
+  paymentMode,
+  vendorId || null,
+  is_paid,
+  partnerId || null,
+  amountPaid,
+  paidAt,
+  expenseDate,
+  staff_id || null,   // ✅ ADD THIS
+  id,
+  req.restaurantId
+]
     );
 
     const wasUnpaid = !expense.is_paid && is_paid;

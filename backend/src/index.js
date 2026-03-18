@@ -75,7 +75,7 @@ apiRouter.use(attachBusinessDay);
 apiRouter.use("/billing", billingRoutes);
 apiRouter.use("/settings", settingsRoutes);
 
-apiRouter.use(checkSubscription);
+// apiRouter.use(checkSubscription);
 
 // ALL PROTECTED ROUTES
 apiRouter.use("/menu", menuRoutes);

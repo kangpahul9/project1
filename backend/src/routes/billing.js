@@ -19,32 +19,27 @@ router.post("/create-checkout", authenticate, async (req, res) => {
     const email = req.user.email; // 🔥 NEVER trust frontend
     const restaurantId = req.restaurantId;
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
+   const session = await stripe.checkout.sessions.create({
+  mode: "subscription",
 
-      payment_method_types: ["card"],
+  payment_method_types: ["card"],
 
-      customer_email: email,
+  customer_email: email,
 
-      customer_creation: "always",
+  line_items: [
+    {
+      price: process.env.STRIPE_PRICE_ID,
+      quantity: 1,
+    },
+  ],
 
-      line_items: [
-        {
-          price: process.env.STRIPE_PRICE_ID,
-          quantity: 1,
-        },
-      ],
+  success_url: `${CLIENT_URL}/settings?billing=success`,
+  cancel_url: `${CLIENT_URL}/settings?billing=cancel`,
 
-      // ✅ DYNAMIC URL (PRODUCTION SAFE)
-      success_url: `${CLIENT_URL}/settings?billing=success`,
-      cancel_url: `${CLIENT_URL}/settings?billing=cancel`,
-
-      // 🔥 CRITICAL: attach metadata
-      metadata: {
-        restaurantId: String(restaurantId),
-      },
-    });
-
+  metadata: {
+    restaurantId: String(restaurantId),
+  },
+});
     res.json({ url: session.url });
 
   } catch (err) {

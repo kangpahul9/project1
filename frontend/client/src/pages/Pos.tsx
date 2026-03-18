@@ -258,7 +258,7 @@ export default function Pos() {
     if (!currentDay || !user) return;
 
 
-    
+
     /* ===============================
      UNPAID ORDER SETTLEMENT FLOW
   =============================== */
@@ -276,6 +276,7 @@ export default function Pos() {
         }
       }
 
+      
       if (method === "upi" || method === "eftpos") {
         payAmount = unpaidOrder.due_amount;
       }

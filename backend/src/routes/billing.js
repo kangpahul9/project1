@@ -77,33 +77,50 @@ router.post(
       if (event.type === "checkout.session.completed") {
   const session = event.data.object;
 
+  // Only handle subscriptions
   if (session.mode !== "subscription") {
     return res.json({ received: true });
   }
 
   const restaurantId = session.metadata?.restaurantId;
   const customerId = session.customer;
-  const subscriptionId = session.subscription || null;
+  const subscriptionId = session.subscription;
 
   if (!restaurantId) throw new Error("Missing metadata");
 
+  let validTill = null;
+
+  // 🔥 Get subscription expiry
+  if (subscriptionId) {
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+    validTill = new Date(subscription.current_period_end * 1000);
+  }
+
+  // 🔥 Save everything
   const result = await pool.query(
     `
     UPDATE restaurants
     SET 
       subscription_status = 'active',
       stripe_customer_id = $1,
-      stripe_subscription_id = $2
-    WHERE id = $3
+      stripe_subscription_id = $2,
+      subscription_valid_till = $3
+    WHERE id = $4
     `,
-    [customerId, subscriptionId, restaurantId]
+    [customerId, subscriptionId, validTill, restaurantId]
   );
 
   if (result.rowCount === 0) {
     console.error("❌ No restaurant found:", restaurantId);
   }
 
-  console.log("✅ Subscription activated:", restaurantId);
+  console.log(
+    "✅ Subscription activated:",
+    restaurantId,
+    "Valid till:",
+    validTill
+  );
 }
 
       /* ==============================
@@ -152,5 +169,18 @@ router.post(
     }
   }
 );
+
+router.get("/subscription", authenticate, async (req, res) => {
+  const result = await pool.query(
+    `
+    SELECT subscription_status, subscription_valid_till
+    FROM restaurants
+    WHERE id = $1
+    `,
+    [req.restaurantId]
+  );
+
+  res.json(result.rows[0]);
+});
 
 export default router;

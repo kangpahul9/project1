@@ -32,6 +32,7 @@ import billingRoutes from "./routes/billing.js"
 
 
 const app = express();
+const apiRouter = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -42,7 +43,6 @@ app.use(
   })
 );
 
-app.use("/billing", billingRoutes);
 
 
 app.use(express.json());
@@ -51,52 +51,47 @@ app.get("/health", (req, res) => {
   res.json({ status: "Backend running 🚀" });
 });
 
+app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
+
+
+
 const PORT = process.env.PORT || 3000;
 
 pool.connect()
   .then(() => console.log("PostgreSQL connected ✅"))
   .catch(err => console.error("DB connection failed ❌", err));
 
-app.use("/auth", authRoutes);
+apiRouter.use("/auth", authRoutes);
 
-app.get("/protected", authenticate, (req, res) => {
+apiRouter.get("/protected", authenticate, (req, res) => {
   res.json({ message: "You are authenticated", user: req.user });
 });
 
-app.use(authenticate);
-app.use(loadSettings);
-app.use(attachBusinessDay)
+apiRouter.use(authenticate);
+apiRouter.use(loadSettings);
+apiRouter.use(attachBusinessDay);
 
-app.use("/menu", menuRoutes);
+// ALL PROTECTED ROUTES
+apiRouter.use("/menu", menuRoutes);
+apiRouter.use("/business-days", businessDayRoutes);
+apiRouter.use("/orders", ordersRoutes);
+apiRouter.use("/orders/cash", cashRoutes);
+apiRouter.use("/reports", reportsRoutes);
+apiRouter.use("/withdrawals", withdrawalsRouter);
+apiRouter.use("/expenses", expensesRoutes);
+apiRouter.use("/vendors", vendorsRoutes);
+apiRouter.use("/staff", staffRoutes);
+apiRouter.use("/menu/categories", menuCategoriesRoutes);
+apiRouter.use("/restaurant", restaurantRoutes);
+apiRouter.use("/settings", settingsRoutes);
+apiRouter.use("/partners", partnersRoutes);
+apiRouter.use("/bank", bankRoutes);
+apiRouter.use("/billing", billingRoutes);
 
-app.use("/business-days", businessDayRoutes);
 
-app.use("/orders", ordersRoutes);
 
-app.use("/orders/cash", cashRoutes);
-
-app.use("/reports", reportsRoutes);
-
-app.use("/withdrawals", withdrawalsRouter);
-
-app.use("/expenses", expensesRoutes);
-
-app.use("/vendors", vendorsRoutes);
-
-app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
-
-app.use("/staff", staffRoutes);
-
-app.use("/menu/categories", menuCategoriesRoutes);
-
-app.use("/restaurant", restaurantRoutes);
-
-app.use("/settings", settingsRoutes);
-
-app.use("/partners", partnersRoutes);
-
-app.use("/bank", bankRoutes);
-
+// ATTACH TO /api
+app.use("/api", apiRouter);
 
 // app.get("/dev/run-salary", async (req, res) => {
 //   try {

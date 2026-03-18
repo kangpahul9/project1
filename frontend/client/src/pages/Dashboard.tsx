@@ -462,7 +462,7 @@ Business Day: {useBusinessDay ? currentDay?.date : new Date().toLocaleDateString
   </div>
   )}
 
- {useBusinessDay ? (
+ {useBusinessDay && currentDay ? (
   <div
     onClick={() => setCloseDialogOpen(true)}
     className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"

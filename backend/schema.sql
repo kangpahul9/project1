@@ -814,7 +814,6 @@ ADD COLUMN subscription_valid_till TIMESTAMP;
 
 ALTER TABLE expenses ADD COLUMN expense_date DATE;
 
---> new
 ALTER TABLE orders
 ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE;
 
@@ -841,3 +840,5 @@ CREATE TABLE order_denominations (
 
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+--> temp push after db changes, will remove after testing

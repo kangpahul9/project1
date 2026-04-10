@@ -22,17 +22,23 @@ export default function UnpaidOrders() {
     <div className="flex bg-gray-50 min-h-screen">
       <Sidebar />
 
-      <main className="flex-1 ml-64 p-8">
-        <h1 className="text-2xl font-bold mb-6">Unpaid Orders</h1>
-
+      <main className="flex-1 ml-0 lg:ml-64 p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8">
+<h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight mb-6">
+  Unpaid Orders
+</h1>
         {/* 🔎 Search Input */}
         <div className="mb-6">
           <Input
+          className="h-10 sm:h-11 lg:h-12 text-sm sm:text-base lg:text-lg"
             placeholder="Search by customer name or phone..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+
+        <div className="mb-4 text-sm text-gray-500">
+  {filteredOrders.length} unpaid orders
+</div>
 
         {isLoading ? (
           <Loader2 className="animate-spin" />
@@ -43,47 +49,38 @@ export default function UnpaidOrders() {
         ) : (
           <div className="space-y-4">
             {filteredOrders.map((order: any) => (
-              <div
-                key={order.id}
-                className="bg-white rounded-xl p-6 shadow border"
-              >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <div className="font-semibold text-lg">
-                      {order.customer_name || "Walk-in Customer"}
-                    </div>
+             <div
+  key={order.id}
+className="bg-white rounded-2xl p-4 sm:p-5 lg:p-6 shadow-sm border flex justify-between items-center">
+  {/* LEFT */}
+  <div>
+    <p className="font-semibold text-sm sm:text-base lg:text-lg">
+      {order.customer_name || "Walk-in Customer"}
+    </p>
 
-                    <div className="text-sm text-gray-500">
-                      {order.customer_phone || "-"}
-                    </div>
+    <p className="text-xs lg:text-lg sm:text-sm text-gray-500">
+      {new Date(order.created_at).toLocaleDateString()} •{" "}
+      {new Date(order.created_at).toLocaleTimeString()}
+    </p>
 
-                    {/* 🕒 Date + Time */}
-                    <div className="text-sm text-gray-500 mt-1">
-                      {new Date(order.created_at).toLocaleDateString()} •{" "}
-                      {new Date(order.created_at).toLocaleTimeString()}
-                    </div>
+    <div className="mt-2 text-xs lg:text-lg sm:text-sm text-gray-500">
+      Paid ₹{order.amount_paid} / ₹{order.total}
+    </div>
 
-                    <div className="mt-2 text-sm">
-                      Total: ₹{order.total}
-                    </div>
+    <p className="text-sm sm:text-base lg:text-lg font-bold text-red-600 mt-1">
+      ₹{order.due_amount} due
+    </p>
+  </div>
 
-                    <div className="text-sm">
-                      Paid: ₹{order.amount_paid}
-                    </div>
-
-                    <div className="text-sm font-bold text-red-500">
-                      Due: ₹{order.due_amount}
-                    </div>
-                  </div>
-
-                  <Button
-                    onClick={() => navigate(`/pos?pay=${order.id}`)}
-                    className="bg-green-600 hover:bg-green-700 text-white"
-                  >
-                    Mark Paid
-                  </Button>
-                </div>
-              </div>
+  {/* RIGHT */}
+  <Button
+    onClick={() => navigate(`/pos?pay=${order.id}`)}
+    className="bg-green-600 hover:bg-green-700 text-white 
+             text-xs sm:text-sm lg:text-base 
+             px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg">
+    Pay Now
+  </Button>
+</div>
             ))}
           </div>
         )}

@@ -812,5 +812,32 @@ ALTER TABLE restaurants ADD COLUMN stripe_subscription_id TEXT;
 ALTER TABLE restaurants
 ADD COLUMN subscription_valid_till TIMESTAMP;
 
---> new
 ALTER TABLE expenses ADD COLUMN expense_date DATE;
+
+--> new
+ALTER TABLE orders
+ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE;
+
+UPDATE orders
+SET is_deleted = FALSE
+WHERE is_deleted IS NULL;
+
+ALTER TABLE cash_ledger 
+ADD COLUMN IF NOT EXISTS is_reversal BOOLEAN DEFAULT FALSE;
+
+ALTER TABLE bank_transactions 
+ADD COLUMN IF NOT EXISTS is_reversal BOOLEAN DEFAULT FALSE;
+
+CREATE TABLE order_denominations (
+  id BIGSERIAL PRIMARY KEY,
+  restaurant_id BIGINT NOT NULL,
+  order_id BIGINT NOT NULL,
+  business_day_id BIGINT NOT NULL,
+
+  note_value INTEGER NOT NULL,
+  quantity INTEGER NOT NULL,
+
+  type TEXT CHECK (type IN ('received','change')),
+
+  created_at TIMESTAMP DEFAULT NOW()
+);

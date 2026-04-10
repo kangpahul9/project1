@@ -22,6 +22,7 @@ import Settings from "@/pages/Settings";
 import PartnerLedger from "@/pages/partners-ledger";
 import PartnerHistory from "./pages/partner-history";
 import BankHistory from "./pages/BankHistory";
+import DeletedOrders from "./pages/deleted-orders";
 
 
 
@@ -114,6 +115,9 @@ function Router() {
         <ProtectedRoute component={BankHistory} />
       </Route>
 
+<Route path="/deleted-orders">
+        <ProtectedRoute component={DeletedOrders} />
+      </Route>
 
       <Route component={NotFound} />
     </Switch>

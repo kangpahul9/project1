@@ -54,6 +54,10 @@ export function useCreateOrder() {
 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey:["menu"] }) 
+      queryClient.invalidateQueries({
+  predicate: (query) =>
+    query.queryKey[0] === "current-cash",
+}); 
       queryClient.invalidateQueries({ queryKey: ["/orders"] });
     },
 
@@ -101,3 +105,102 @@ export function useOrderByBillNumber(billNumber?: string) {
 }
 
 
+export function useDeleteOrder() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`${API_BASE}/orders/${id}/delete`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to delete order");
+      }
+
+      return res.json();
+    },
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/orders"] });
+      queryClient.invalidateQueries({
+  predicate: (query) =>
+    query.queryKey[0] === "current-cash",
+}); 
+      queryClient.invalidateQueries({ queryKey: ["deleted-orders"] });
+
+      toast({
+        title: "Order Deleted",
+        description: "Order moved to deleted list",
+      });
+    },
+
+    onError: (error: any) => {
+      toast({
+        title: "Delete Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+}
+
+export function useDeletedOrders() {
+  return useQuery({
+    queryKey: ["deleted-orders"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/orders/deleted`, {
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) throw new Error("Failed to fetch deleted orders");
+      return res.json();
+    },
+  });
+}
+
+export function useUndoDeleteOrder() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`${API_BASE}/orders/${id}/undo-delete`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to restore order");
+      }
+
+      return res.json();
+    },
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/orders"] });
+      queryClient.invalidateQueries({
+  predicate: (query) =>
+    query.queryKey[0] === "current-cash",
+}); 
+      queryClient.invalidateQueries({ queryKey: ["deleted-orders"] });
+
+      toast({
+        title: "Order Restored",
+        description: "Order is back in active list",
+      });
+    },
+
+    onError: (error: any) => {
+      toast({
+        title: "Restore Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+}

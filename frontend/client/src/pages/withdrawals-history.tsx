@@ -118,57 +118,70 @@ const netImpact = totalDeposits - totalWithdrawals;
   };
 
   return (
-    <div className="flex bg-gray-50 min-h-screen">
+    <div className="flex bg-gray-50 min-h-screen overflow-hidden">
       <Sidebar />
-      <main className="flex-1 ml-64 p-8">
-        <h1 className="text-3xl font-bold mb-6">
-          {mode === "withdrawal"
+<main className="flex-1 ml-0 lg:ml-64 p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8 overflow-y-auto">
+         <div className="flex items-center justify-between mb-6">
+  <div>
+    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
+      {mode === "withdrawal"
             ? "Withdrawal Analytics"
             : "Deposit Analytics"}
-        </h1>
-
-        {/* TOGGLE */}
-        <div className="flex gap-4 mb-6">
-          <button
-            onClick={() => setMode("withdrawal")}
-            className={`px-4 py-2 rounded ${
-              mode === "withdrawal"
-                ? "bg-red-600 text-white"
-                : "bg-white"
-            }`}
-          >
-            Withdrawals
-          </button>
-
-          <button
-            onClick={() => setMode("deposit")}
-            className={`px-4 py-2 rounded ${
-              mode === "deposit"
-                ? "bg-green-600 text-white"
-                : "bg-white"
-            }`}
-          >
-            Deposits
-          </button>
-
-          <button
-            onClick={exportCSV}
-            className="ml-auto bg-green-600 text-white px-4 py-2 rounded"
-          >
-            Export CSV
-          </button>
-        </div>
-
-        {/* SUMMARY */}
-        <div className="grid grid-cols-3 gap-6 mb-8">
-
-  {/* TOTAL WITHDRAWALS */}
-  <div className="bg-white p-6 rounded-xl shadow">
-    <h3>Total Withdrawals</h3>
-    <p className="text-2xl font-bold mt-2 text-red-600">
-      ₹{totalWithdrawals}
+    </h1>
+    <p className="text-sm text-gray-500">
+      Track cash flow, withdrawals & deposits
     </p>
   </div>
+</div>
+
+        {/* TOGGLE */}
+        <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-xl w-fit mb-6">
+
+  <button
+    onClick={() => setMode("withdrawal")}
+    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+      mode === "withdrawal"
+        ? "bg-white shadow text-red-600"
+        : "text-gray-600"
+    }`}
+  >
+    Withdrawals
+  </button>
+
+  <button
+    onClick={() => setMode("deposit")}
+    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+      mode === "deposit"
+        ? "bg-white shadow text-green-600"
+        : "text-gray-600"
+    }`}
+  >
+    Deposits
+  </button>
+
+  <button
+    onClick={exportCSV}
+    className="ml-4 bg-black text-white px-3 py-2 rounded-lg text-sm"
+  >
+    Export
+  </button>
+
+</div>
+
+<div className="mb-4 text-sm text-gray-500">
+  {totalTransactions} transactions in this period
+</div>
+
+        {/* SUMMARY */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+
+  {/* TOTAL WITHDRAWALS */}
+  <div className="bg-white p-5 rounded-2xl shadow-sm border hover:shadow-md transition">
+  <p className="text-xs text-gray-500">Total Withdrawals</p>
+  <p className="text-2xl font-bold text-red-600 mt-1">
+    ₹{totalWithdrawals}
+  </p>
+</div>
 
   {/* TOTAL DEPOSITS */}
   <div className="bg-white p-6 rounded-xl shadow">
@@ -196,20 +209,26 @@ const netImpact = totalDeposits - totalWithdrawals;
           <Loader2 className="animate-spin" />
         ) : (
           <>
-            <div className="bg-white rounded-xl shadow p-6 mb-8">
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart layout="vertical" data={reasonBreakdown}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis type="category" dataKey="reason" width={150} />
-                  <Tooltip />
-                  <Bar dataKey="amount" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <div className="bg-white rounded-2xl shadow-sm border p-5 mb-8 overflow-hidden">
+  <ResponsiveContainer width="100%" height={250}>
+    <BarChart layout="vertical" data={reasonBreakdown}>
+      <CartesianGrid strokeDasharray="2 2" stroke="#eee" />
+      <XAxis type="number" hide />
+      <YAxis 
+        type="category" 
+        dataKey="reason" 
+        width={50}
+        tick={{ fontSize: 12 }}
+      />
+      <Tooltip />
+      <Bar dataKey="amount" radius={[6, 6, 6, 6]} />
+    </BarChart>
+  </ResponsiveContainer>
+</div>
 
             <div className="bg-white rounded-xl shadow p-6">
-              <table className="w-full text-left">
+              <div className="overflow-x-auto">
+  <table className="w-full text-left min-w-[600px]">
                 <thead className="border-b">
                   <tr>
                     <th className="py-2">Date</th>
@@ -219,16 +238,23 @@ const netImpact = totalDeposits - totalWithdrawals;
                   </tr>
                 </thead>
                 <tbody>
-                  {data?.map((w: any) => (
-                    <tr key={w.id}>
-                      <td>{new Date(w.created_at).toLocaleString()}</td>
-                      <td>₹{w.amount}</td>
-                      <td>{w.reason}</td>
-                      <td>{w.owner_name || "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
+  {data?.map((w: any) => (
+    <tr key={w.id} className="border-b last:border-0">
+      <td className="py-3 text-sm text-gray-600">
+        {new Date(w.created_at).toLocaleString()}
+      </td>
+      <td className="font-semibold">
+        ₹{w.amount}
+      </td>
+      <td className="text-gray-600">{w.reason}</td>
+      <td className="text-gray-500 text-sm">
+        {w.owner_name || "-"}
+      </td>
+    </tr>
+  ))}
+</tbody>
               </table>
+              </div>
             </div>
           </>
         )}

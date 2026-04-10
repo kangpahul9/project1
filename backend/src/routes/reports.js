@@ -15,43 +15,50 @@ if (!date) {
   return res.status(400).json({ message: "date required (YYYY-MM-DD)" });
 }
 
-const salesRes = await pool.query(
-  `
-  SELECT
-  COUNT(DISTINCT o.id) as total_orders,
-  SUM(DISTINCT o.total) as total_sales,
-  SUM(CASE WHEN o.is_paid = true THEN 1 ELSE 0 END) as paid_orders,
-  SUM(CASE WHEN o.is_paid = false THEN 1 ELSE 0 END) as unpaid_orders,
+// ORDERS QUERY
+const ordersRes = await pool.query(`
+SELECT
+  COUNT(*) as total_orders,
+  SUM(total) as total_sales,
+  COUNT(*) FILTER (WHERE is_paid = true) as paid_orders,
+  COUNT(*) FILTER (WHERE is_paid = false) as unpaid_orders,
+  SUM(CASE WHEN payment_method = 'unpaid' THEN total ELSE 0 END) as total_credit_given,
+  SUM(due_amount) as total_outstanding
+FROM orders
+WHERE restaurant_id=$1
+AND created_at >= $2::date 
+AND created_at < ($2::date + INTERVAL '1 day')
+AND is_deleted = FALSE
+`, [req.restaurantId, date]);
 
+// PAYMENTS QUERY
+const paymentsRes = await pool.query(`
+SELECT
   SUM(CASE WHEN op.payment_method = 'cash' THEN op.amount ELSE 0 END) as total_cash,
   SUM(CASE WHEN op.payment_method = 'card' THEN op.amount ELSE 0 END) as total_card,
-  SUM(CASE WHEN op.payment_method = 'online' THEN op.amount ELSE 0 END) as total_online,
+  SUM(CASE WHEN op.payment_method = 'online' THEN op.amount ELSE 0 END) as total_online
+FROM order_payments op
+JOIN orders o ON o.id = op.order_id
+WHERE op.restaurant_id=$1
+AND o.is_deleted = FALSE
+AND op.created_at >= $2::date 
+AND op.created_at < ($2::date + INTERVAL '1 day')
+`, [req.restaurantId, date]);
 
-  SUM(CASE WHEN o.payment_method = 'unpaid' THEN o.total ELSE 0 END) as total_credit_given,
-  SUM(o.due_amount) as total_outstanding
+const o = ordersRes.rows[0];
+const p = paymentsRes.rows[0];
 
-FROM orders o
-LEFT JOIN order_payments op
-ON op.order_id = o.id AND op.restaurant_id=$1
-
-WHERE o.restaurant_id=$1 AND o.created_at >= $2::date 
-AND o.created_at < ($2::date + INTERVAL '1 day');`,
-  [req.restaurantId,date]
-);
-
-    const row = salesRes.rows[0];
-
-    res.json({
-      totalSales: Number(row.total_sales || 0),
-      totalCash: Number(row.total_cash || 0),
-      totalCard: Number(row.total_card || 0),
-      totalOnline: Number(row.total_online || 0),
-      totalCreditGiven: Number(row.total_credit_given || 0),
-      totalOutstanding: Number(row.total_outstanding || 0),
-      totalOrders: Number(row.total_orders || 0),
-      paidOrders: Number(row.paid_orders || 0),
-      unpaidOrders: Number(row.unpaid_orders || 0),
-    });
+res.json({
+  totalSales: Number(o.total_sales || 0),
+  totalCash: Number(p.total_cash || 0),
+  totalCard: Number(p.total_card || 0),
+  totalOnline: Number(p.total_online || 0),
+  totalCreditGiven: Number(o.total_credit_given || 0),
+  totalOutstanding: Number(o.total_outstanding || 0),
+  totalOrders: Number(o.total_orders || 0),
+  paidOrders: Number(o.paid_orders || 0),
+  unpaidOrders: Number(o.unpaid_orders || 0),
+});
 
   } catch (err) {
     console.error(err);
@@ -66,7 +73,9 @@ router.get("/weekly", authenticate,requireAdmin, async (req, res) => {
   TO_CHAR(created_at, 'DD Mon') as date,
   SUM(total) as total_sales
 FROM orders
-WHERE restaurant_id=$1 AND created_at >= NOW() - INTERVAL '7 days'
+WHERE restaurant_id=$1 
+AND created_at >= NOW() - INTERVAL '7 days'
+AND is_deleted = FALSE
 GROUP BY DATE(created_at), TO_CHAR(created_at, 'DD Mon')
 ORDER BY DATE(created_at)
     `,[req.restaurantId]);
@@ -81,26 +90,33 @@ ORDER BY DATE(created_at)
 router.get("/weekly-summary", authenticate, requireAdmin,async (req, res) => {
   try {
     // Current week
-    const currentWeek = await pool.query(`
-     SELECT
-COUNT(DISTINCT o.id) as total_orders,
-SUM(DISTINCT o.total) as total_sales,
-SUM(CASE WHEN o.is_paid = true THEN 1 ELSE 0 END) as paid_orders,
-SUM(CASE WHEN o.is_paid = false THEN 1 ELSE 0 END) as unpaid_orders,
-
-SUM(CASE WHEN op.payment_method = 'cash' THEN op.amount ELSE 0 END) as total_cash,
-SUM(CASE WHEN op.payment_method = 'card' THEN op.amount ELSE 0 END) as total_card,
-SUM(CASE WHEN op.payment_method = 'online' THEN op.amount ELSE 0 END) as total_online,
-
-SUM(CASE WHEN o.payment_method = 'unpaid' THEN o.total ELSE 0 END) as total_credit_given,
-SUM(o.due_amount) as total_outstanding
-
+    // ORDERS
+const currentWeekOrders = await pool.query(`
+SELECT
+  COUNT(*) as total_orders,
+  SUM(total) as total_sales,
+  COUNT(*) FILTER (WHERE is_paid = true) as paid_orders,
+  COUNT(*) FILTER (WHERE is_paid = false) as unpaid_orders,
+  SUM(CASE WHEN payment_method = 'unpaid' THEN total ELSE 0 END) as total_credit_given,
+  SUM(due_amount) as total_outstanding
 FROM orders o
-LEFT JOIN order_payments op 
-ON op.order_id = o.id AND op.restaurant_id=$1
+WHERE o.restaurant_id=$1
+AND o.created_at >= NOW() - INTERVAL '7 days'
+AND o.is_deleted = FALSE
+`, [req.restaurantId]);
 
-WHERE o.restaurant_id=$1 AND o.created_at >= NOW() - INTERVAL '7 days'
-    `,[req.restaurantId]);
+// PAYMENTS
+const currentWeekPayments = await pool.query(`
+SELECT
+  SUM(CASE WHEN op.payment_method = 'cash' THEN op.amount ELSE 0 END) as total_cash,
+  SUM(CASE WHEN op.payment_method = 'card' THEN op.amount ELSE 0 END) as total_card,
+  SUM(CASE WHEN op.payment_method = 'online' THEN op.amount ELSE 0 END) as total_online
+FROM order_payments op
+JOIN orders o ON o.id = op.order_id
+WHERE op.restaurant_id=$1
+AND o.is_deleted = FALSE
+AND op.created_at >= NOW() - INTERVAL '7 days'
+`, [req.restaurantId]);
 
     // Previous week
     const previousWeek = await pool.query(`
@@ -110,8 +126,9 @@ WHERE o.restaurant_id=$1 AND o.created_at >= NOW() - INTERVAL '7 days'
       AND created_at < NOW() - INTERVAL '7 days'
     `,[req.restaurantId]);
 
-    const row = currentWeek.rows[0];
-    const currentSales = Number(row.total_sales || 0);
+   const o = currentWeekOrders.rows[0];
+const p = currentWeekPayments.rows[0];
+    const currentSales = Number(o.total_sales || 0);
     const previousSales = Number(previousWeek.rows[0].total_sales || 0);
 
 
@@ -121,19 +138,19 @@ WHERE o.restaurant_id=$1 AND o.created_at >= NOW() - INTERVAL '7 days'
     }
 
     res.json({
-      totalSales: currentSales,
-      totalCash: Number(row.total_cash || 0),
-      totalCard: Number(row.total_card || 0),
-      totalOnline: Number(row.total_online || 0),
-      totalCreditGiven: Number(row.total_credit_given || 0),
-      totalOutstanding: Number(row.total_outstanding || 0),
-      totalOrders: Number(row.total_orders || 0),
-      paidOrders: Number(row.paid_orders || 0),
-      unpaidOrders: Number(row.unpaid_orders || 0),
+  totalSales: Number(o.total_sales || 0),
+  totalCash: Number(p.total_cash || 0),
+  totalCard: Number(p.total_card || 0),
+  totalOnline: Number(p.total_online || 0),
+  totalCreditGiven: Number(o.total_credit_given || 0),
+  totalOutstanding: Number(o.total_outstanding || 0),
+  totalOrders: Number(o.total_orders || 0),
+  paidOrders: Number(o.paid_orders || 0),
+  unpaidOrders: Number(o.unpaid_orders || 0),
 
-      previousSales,
-      growthPercentage: Number(growth.toFixed(2))
-    });
+  previousSales,
+  growthPercentage: Number(growth.toFixed(2))
+});
 
   } catch (err) {
     console.error(err);
@@ -149,7 +166,9 @@ router.get("/monthly", authenticate,requireAdmin, async (req, res) => {
   TO_CHAR(created_at, 'DD Mon') as date,
   SUM(total) as total_sales
 FROM orders
-WHERE restaurant_id=$1 AND created_at >= NOW() - INTERVAL '30 days'
+WHERE restaurant_id=$1 
+AND created_at >= NOW() - INTERVAL '30 days'
+AND is_deleted = FALSE
 GROUP BY DATE(created_at), TO_CHAR(created_at, 'DD Mon')
 ORDER BY DATE(created_at)
     `,[req.restaurantId]);
@@ -164,26 +183,33 @@ ORDER BY DATE(created_at)
 router.get("/monthly-summary", authenticate,requireAdmin, async (req, res) => {
   try {
     // Current month (last 30 days)
-    const currentMonth = await pool.query(`
-     SELECT
-COUNT(DISTINCT o.id) as total_orders,
-SUM(DISTINCT o.total) as total_sales,
-SUM(CASE WHEN o.is_paid = true THEN 1 ELSE 0 END) as paid_orders,
-SUM(CASE WHEN o.is_paid = false THEN 1 ELSE 0 END) as unpaid_orders,
+    // ORDERS
+const currentMonthOrders = await pool.query(`
+SELECT
+  COUNT(*) as total_orders,
+  SUM(total) as total_sales,
+  COUNT(*) FILTER (WHERE is_paid = true) as paid_orders,
+  COUNT(*) FILTER (WHERE is_paid = false) as unpaid_orders,
+  SUM(CASE WHEN payment_method = 'unpaid' THEN total ELSE 0 END) as total_credit_given,
+  SUM(due_amount) as total_outstanding
+FROM orders
+WHERE restaurant_id=$1
+AND created_at >= NOW() - INTERVAL '30 days'
+AND is_deleted = FALSE
+`, [req.restaurantId]);
 
-SUM(CASE WHEN op.payment_method = 'cash' THEN op.amount ELSE 0 END) as total_cash,
-SUM(CASE WHEN op.payment_method = 'card' THEN op.amount ELSE 0 END) as total_card,
-SUM(CASE WHEN op.payment_method = 'online' THEN op.amount ELSE 0 END) as total_online,
-
-SUM(CASE WHEN o.payment_method = 'unpaid' THEN o.total ELSE 0 END) as total_credit_given,
-SUM(o.due_amount) as total_outstanding
-
-FROM orders o
-LEFT JOIN order_payments op
-ON op.order_id = o.id AND op.restaurant_id=$1
-
-WHERE o.created_at >= NOW() - INTERVAL '30 days'
-    `,[req.restaurantId]);
+// PAYMENTS
+const currentMonthPayments = await pool.query(`
+SELECT
+  SUM(CASE WHEN op.payment_method = 'cash' THEN op.amount ELSE 0 END) as total_cash,
+  SUM(CASE WHEN op.payment_method = 'card' THEN op.amount ELSE 0 END) as total_card,
+  SUM(CASE WHEN op.payment_method = 'online' THEN op.amount ELSE 0 END) as total_online
+FROM order_payments op
+JOIN orders o ON o.id = op.order_id
+WHERE op.restaurant_id=$1
+AND o.is_deleted = FALSE
+AND op.created_at >= NOW() - INTERVAL '30 days'
+`, [req.restaurantId]);
 
     // Previous month (30–60 days ago)
     const previousMonth = await pool.query(`
@@ -193,8 +219,9 @@ WHERE o.created_at >= NOW() - INTERVAL '30 days'
       AND created_at < NOW() - INTERVAL '30 days'
     `,[req.restaurantId]);
 
-    const row = currentMonth.rows[0];
-    const currentSales = Number(row.total_sales || 0);
+    const o = currentMonthOrders.rows[0];
+const p = currentMonthPayments.rows[0];
+   const currentSales = Number(o.total_sales || 0);
     const previousSales = Number(previousMonth.rows[0].total_sales || 0);
 
     let growth = 0;
@@ -203,19 +230,19 @@ WHERE o.created_at >= NOW() - INTERVAL '30 days'
     }
 
     res.json({
-      totalSales: currentSales,
-      totalCash: Number(row.total_cash || 0),
-      totalCard: Number(row.total_card || 0),
-      totalOnline: Number(row.total_online || 0),
-      totalCreditGiven: Number(row.total_credit_given || 0),
-      totalOutstanding: Number(row.total_outstanding || 0),
-      totalOrders: Number(row.total_orders || 0),
-      paidOrders: Number(row.paid_orders || 0),
-      unpaidOrders: Number(row.unpaid_orders || 0),
+  totalSales: Number(o.total_sales || 0),
+  totalCash: Number(p.total_cash || 0),
+  totalCard: Number(p.total_card || 0),
+  totalOnline: Number(p.total_online || 0),
+  totalCreditGiven: Number(o.total_credit_given || 0),
+  totalOutstanding: Number(o.total_outstanding || 0),
+  totalOrders: Number(o.total_orders || 0),
+  paidOrders: Number(o.paid_orders || 0),
+  unpaidOrders: Number(o.unpaid_orders || 0),
 
-      previousSales,
-      growthPercentage: Number(growth.toFixed(2))
-    });
+  previousSales,
+  growthPercentage: Number(growth.toFixed(2))
+});
 
   } catch (err) {
     console.error(err);
@@ -252,6 +279,7 @@ due_amount,
 created_at
 FROM orders
 WHERE restaurant_id=$1
+AND is_deleted = FALSE
 ORDER BY created_at DESC
 `;
 
@@ -269,7 +297,7 @@ params = [req.restaurantId];
           COUNT(*) as total_orders,
           SUM(total) as total_sales
         FROM orders
-        WHERE restaurant_id=$1 AND created_at >= NOW() - INTERVAL '7 days'
+        WHERE restaurant_id=$1 AND created_at >= NOW() - INTERVAL '7 days' AND is_deleted = FALSE
         GROUP BY DATE(created_at)
         ORDER BY DATE(created_at)
       `;params = [req.restaurantId]
@@ -284,7 +312,7 @@ params = [req.restaurantId];
           COUNT(*) as total_orders,
           SUM(total) as total_sales
         FROM orders
-        WHERE restaurant_id=$1 AND created_at >= NOW() - INTERVAL '30 days'
+        WHERE restaurant_id=$1 AND created_at >= NOW() - INTERVAL '30 days' AND is_deleted = FALSE
         GROUP BY DATE(created_at)
         ORDER BY DATE(created_at)
       `;params=[req.restaurantId];

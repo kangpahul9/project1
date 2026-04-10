@@ -38,42 +38,69 @@ export default function PrintBill() {
       </div>
 
       {/* BILL INFO */}
-      <div className="border-t border-b py-2 text-xs">
+      <div className="border-t border-b border-dashed py-2 text-xs">
         <p>Bill: {order.bill_number}</p>
         <p>Date: {new Date(order.created_at).toLocaleString()}</p>
         <p>Payment: {order.payment_method}</p>
       </div>
 
       {/* ITEMS */}
-      <div className="mt-3 space-y-1">
-        {order?.items?.map((item: any, index: number) => {
-          const lineTotal =
-            Number(item.price_snapshot) * Number(item.quantity);
+      <div className="mt-3 text-xs">
+
+        {/* HEADER */}
+        <div className="flex justify-between font-semibold border-b border-dashed pb-1">
+          <span className="w-[40%]">Item</span>
+          <span className="w-[20%] text-right">Price</span>
+          <span className="w-[15%] text-right">Qty</span>
+          <span className="w-[25%] text-right">Total</span>
+        </div>
+
+        {/* ITEMS LIST */}
+        {order.items.map((item: any, index: number) => {
+          const price = Number(item.price_snapshot);
+          const qty = Number(item.quantity);
+          const lineTotal = price * qty;
 
           return (
-            <div
-              key={index}
-              className="flex justify-between"
-            >
-              <span>
-                {item.item_name} x{Number(item.quantity)}
+            <div key={index} className="flex justify-between py-1">
+
+              <span className="w-[40%] truncate">
+                {item.item_name}
               </span>
-              <span>{currency}{lineTotal}</span>
+
+              <span className="w-[20%] text-right">
+                {currency}{price}
+              </span>
+
+              <span className="w-[15%] text-right">
+                {qty}
+              </span>
+
+              <span className="w-[25%] text-right">
+                {currency}{lineTotal}
+              </span>
+
             </div>
           );
         })}
       </div>
 
+      {/* SEPARATOR */}
+      <div className="border-t border-dashed my-2" />
+
       {/* TOTAL */}
-      <div className="border-t mt-3 pt-2 flex justify-between font-bold">
+      <div className="flex justify-between font-bold">
         <span>Total</span>
         <span>{currency}{order.total}</span>
       </div>
 
       {/* FOOTER */}
-      <div className="mt-3 text-center text-xs">
-        {restaurant.receipt_footer}
+      <div className="mt-3 text-center text-[10px]">
+        {restaurant.receipt_footer || "Thank you! Visit again 🙏"}
+
+        <p className="mt-2 text-[8px] text-gray-500">Printed on KangPos </p>
       </div>
+
 
     </div>
   );

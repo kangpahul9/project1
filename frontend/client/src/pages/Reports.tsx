@@ -115,45 +115,59 @@ function GrowthBadge({ value }: { value: number }) {
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
 
-      <main className="flex-1 ml-64 p-8">
-        <div className="flex items-center justify-between mb-6">
+      <main className="flex-1 ml-0 lg:ml-64 p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8">
+        <div className="mb-8 space-y-4">
+
+  {/* TITLE */}
   <h1 className="text-2xl font-bold capitalize">
     {reportType} Report
   </h1>
 
-  <div className="flex bg-white rounded-lg shadow p-1">
+  {/* TOP ROW */}
+  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+
+    {/* DATE */}
     <input
-  type="date"
-  value={selectedDate}
-  onChange={(e) => setSelectedDate(e.target.value)}
-  className="border px-3 py-2 rounded-md"
-/>
+      type="date"
+      value={selectedDate}
+      onChange={(e) => setSelectedDate(e.target.value)}
+      className="border px-3 py-2 rounded-md w-full sm:w-auto"
+    />
+
+    {/* EXPORT */}
+    <button
+      onClick={handleExport}
+      className="w-full sm:w-auto px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700"
+    >
+      Export CSV
+    </button>
+  </div>
+
+  {/* TOGGLE ROW */}
+  <div className="flex w-full sm:w-fit bg-gray-100 rounded-lg p-1">
+
     {["daily", "weekly", "monthly"].map((type) => (
       <button
         key={type}
         onClick={() => setReportType(type as any)}
-        className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+        className={`flex-1 sm:flex-none px-4 py-2 rounded-md text-sm font-medium transition ${
           reportType === type
-            ? "bg-primary text-white"
-            : "text-gray-600 hover:bg-gray-100"
+            ? "bg-primary text-white shadow"
+            : "text-gray-600 hover:bg-gray-200"
         }`}
       >
         {type.charAt(0).toUpperCase() + type.slice(1)}
       </button>
     ))}
-    <button
-  onClick={handleExport}
-  className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700"
->
-  Export CSV
-</button>
+
   </div>
+
 </div>
 
 
 
         {/* ================== KPI CARDS ================== */}
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
 <div>
   <Card
     title="Total Sales"
@@ -175,7 +189,7 @@ function GrowthBadge({ value }: { value: number }) {
         </div>
 
         {/* ================== CHARTS SECTION ================== */}
-        <div className="grid grid-cols-2 gap-8 mt-12">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 mt-12">
           
           {/* PAYMENT PIE */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border">
@@ -186,7 +200,7 @@ function GrowthBadge({ value }: { value: number }) {
                 <Pie
   data={paymentData}
   dataKey="value"
-  outerRadius={110}
+  outerRadius={window.innerWidth < 640 ? 80 : 110}
   label={({ name, percent }) =>
     `${name} ${(percent * 100).toFixed(0)}%`
   }
@@ -233,7 +247,7 @@ function Card({ title, value }: any) {
   return (
     <div className="bg-white p-6 rounded-2xl shadow-sm border hover:shadow-md transition">
       <div className="text-sm text-gray-500">{title}</div>
-      <div className="text-3xl font-bold mt-2 text-gray-800">{value}</div>
+      <div className="text-xl sm:text-2xl lg:text-3xl font-bold mt-2 text-gray-800">{value}</div>
     </div>
   );
 }

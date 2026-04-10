@@ -1,11 +1,15 @@
 import { Sidebar } from "@/components/Sidebar";
-import { useOrders, useOrderDetails,useOrderByBillNumber } from "@/hooks/use-orders";
-import { Loader2,Printer } from "lucide-react";
+import { useOrders, useOrderDetails,useOrderByBillNumber,useDeleteOrder } from "@/hooks/use-orders";
+import { Loader2,Printer,Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useAuthStore } from "@/hooks/use-auth";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export default function Orders() {
+  const { user } = useAuthStore();
+const isAdmin = user?.role === "ADMIN";
   const { data, isLoading } = useOrders();
 
 
@@ -17,6 +21,8 @@ export default function Orders() {
   search.toUpperCase().startsWith("BD-") ? search : undefined;
   const { data: searchedBill } = useOrderByBillNumber(billSearch);
   const { data: selectedOrder } = useOrderDetails(selectedOrderId);
+const { mutate: deleteOrder, isPending: isDeleting } = useDeleteOrder();
+const [deleteId, setDeleteId] = useState<number | null>(null);
 
 
 
@@ -45,14 +51,14 @@ if (searchedBill && !filteredOrders.find((o: any) => o.id === searchedBill.id)) 
     <div className="flex bg-gray-50 min-h-screen">
       <Sidebar />
 
-      <main className="flex-1 ml-64 p-8">
-        <h1 className="text-2xl font-bold mb-6">
+<main className="flex-1 ml-0 lg:ml-64 p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8">
+          <h1 className="text-2xl font-bold mb-6">
           All Orders
         </h1>
 
         {/* Filters */}
-        <div className="flex gap-4 mb-6">
-          <Input
+<div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <Input
 placeholder="Search by name, phone, or bill number..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -77,9 +83,9 @@ placeholder="Search by name, phone, or bill number..."
                 key={order.id}
                 className="bg-white p-6 rounded-xl shadow border"
               >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <div className="font-semibold text-lg">
+<div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+                    <div>
+                    <div className="font-semibold text-base sm:text-lg break-words">
                       {order.bill_number} — {order.customer_name || "Walk-in"}
                     </div>
 
@@ -105,34 +111,45 @@ placeholder="Search by name, phone, or bill number..."
                     </div>
                   </div>
 
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      setSelectedOrderId(
-                        selectedOrderId === order.id
-                          ? null
-                          : order.id
-                      )
-                    }
-                  >
-                    {selectedOrderId === order.id
-                      ? "Hide Details"
-                      : "View Details"}
-                  </Button>
-                  <Button
-  size="sm"
-  variant="secondary"
-  onClick={() =>
-    window.open(
-      `/print/${order.bill_number}`,
-      "_blank",
-      "width=400,height=600"
-    )
-  }
+                 <div className="flex flex-wrap gap-2">
+  <Button className="w-full text-gray-600"
+    variant="outline"
+    onClick={() =>
+      setSelectedOrderId(
+        selectedOrderId === order.id ? null : order.id
+      )
+    }
+  >
+    {selectedOrderId === order.id
+      ? "Hide Details"
+      : "View Details"}
+  </Button>
+
+  <Button className="w-full text-green-600"
+    size="sm"
+    variant="secondary"
+    onClick={() =>
+      window.open(
+        `/print/${order.bill_number}`,
+        "_blank",
+        "width=400,height=600"
+      )
+    }
+  >
+    <Printer className="w-4 h-4 mr-2" />
+    Print
+  </Button>
+
+  {/* 🔥 DELETE BUTTON */}
+  {isAdmin && (
+    <Button className="w-full"
+  variant="destructive"
+  onClick={() => setDeleteId(order.id)}
 >
-  <Printer className="w-4 h-4 mr-2" />
-  Print
+  Delete
 </Button>
+  )}
+</div>
 
                 </div>
 
@@ -174,6 +191,39 @@ placeholder="Search by name, phone, or bill number..."
           </div>
         )}
       </main>
+      <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle className="text-red-600">Delete Order?</DialogTitle>
+      <DialogDescription>
+        This will move the order to deleted list. You can restore it later.
+      </DialogDescription>
+    </DialogHeader>
+
+    <DialogFooter>
+      <Button
+        variant="outline"
+        onClick={() => setDeleteId(null)}
+      >
+        Cancel
+      </Button>
+
+      <Button
+        className="bg-red-600 text-white"
+        disabled={isDeleting}
+        onClick={() => {
+          if (!deleteId) return;
+
+          deleteOrder(deleteId, {
+            onSuccess: () => setDeleteId(null),
+          });
+        }}
+      >
+        {isDeleting ? "Deleting..." : "Confirm Delete"}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
     </div>
   );
 }

@@ -113,18 +113,21 @@ useEffect(() => {
 }, [paymentMethod, deductFromGalla]);
 
   return (
-    <div className="flex bg-gray-50 min-h-screen">
+    <div className="flex bg-gray-50 min-h-screen pt-16 lg:pt-8 ">
       <Sidebar />
-      <main className="flex-1 ml-64 p-8">
-        <div className="flex justify-between items-center mb-6">
-  <h1 className="text-3xl font-bold">Staff Members</h1>
+      <main className="flex-1 lg:ml-64">
+        <div className="px-4 sm:px-6 lg:px-8 py-6 mx-auto">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold">
+    Staff Members
+  </h1>
 
   <Button onClick={() => setOpen(true)}>
     Add Staff
   </Button>
 </div>
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-  <StatCard
+<div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
+      <StatCard
     title="Total Salary"
     value={`₹${summary?.totalSalary || 0}`}
     icon={Wallet}
@@ -148,22 +151,31 @@ useEffect(() => {
     icon={TrendingUp}
   />
 </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-{staff?.map((member: StaffType) => (
+<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+    {staff?.map((member: StaffType) => (
               <Card
   key={member.id}
-  className="hover:shadow-lg transition-all cursor-pointer"
+  className="hover:shadow-xl transition-all cursor-pointer border-l-4 border-l-gray-200 hover:border-l-primary"
   onClick={() => {
     setHistoryStaff(member);
     setHistoryOpen(true);
   }}
 >
   <CardHeader className="flex flex-row items-center justify-between">
+    <span className={`text-xs px-2 py-1 rounded-full ${
+  Number(member.balance) > 0
+    ? "bg-red-100 text-red-700"
+    : "bg-green-100 text-green-700"
+}`}>
+  {Number(member.balance) > 0 ? "Due" : "Settled"}
+</span>
     <div className="flex items-center gap-4">
       <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-lg">
         {member.name.charAt(0)}
       </div>
-      <CardTitle>{member.name}</CardTitle>
+      <CardTitle className="text-base sm:text-lg font-semibold">
+  {member.name}
+</CardTitle>
     </div>
 
     <Badge variant={member.is_active ? "default" : "destructive"}>
@@ -184,18 +196,18 @@ useEffect(() => {
 
     <div className="flex justify-between text-sm mt-2">
       <span>Balance</span>
-      <span className={`font-semibold ${
-        Number(member.balance) > 0 ? "text-red-600" : "text-green-600"
-      }`}>
+      <span className={`text-lg sm:text-xl font-bold ${
+  Number(member.balance) > 0 ? "text-red-600" : "text-green-600"
+}`}>
         ₹{member.balance}
       </span>
       
     </div>
 
-  <div className="mt-4 flex gap-2">
+ <div className="mt-4 flex gap-2">
   <Button
     size="sm"
-    variant="outline"
+className="flex-1"
     onClick={(e) => {
       e.stopPropagation();
       openTransactionModal(member);
@@ -206,7 +218,7 @@ useEffect(() => {
 
   <Button
     size="sm"
-    variant="secondary"
+    className="flex-1"
     onClick={(e) => {
       e.stopPropagation();
       openEditModal(member);
@@ -645,6 +657,7 @@ useEffect(() => {
     </div>
   </DialogContent>
 </Dialog>
+</div>
       </main>
     </div>
   );

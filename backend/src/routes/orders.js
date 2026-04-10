@@ -1,6 +1,6 @@
 import express from "express";
 import pool from "../config/db.js";
-import { authenticate } from "../middleware/authMiddleware.js";
+import { authenticate, requireAdmin } from "../middleware/authMiddleware.js";
 import { getBusinessDay } from "../utils/getBusinessDay.js";
 import { addBankTransaction } from "../utils/bankLedger.js";
 
@@ -18,8 +18,12 @@ async function addReceivedCash(client,restaurantId, finalBusinessDayId, breakdow
     const noteValue = Number(note.note);
     const qty = Number(note.qty);
 
-    if (!VALID_DENOMS.includes(noteValue) || qty <= 0) continue;
-
+if (
+  !Number.isFinite(noteValue) ||
+  !Number.isFinite(qty) ||
+  qty <= 0 ||
+  !VALID_DENOMS.includes(noteValue)
+) continue;
     totalReceived += noteValue * qty;
 
     await client.query(
@@ -90,6 +94,47 @@ async function returnChange(client, restaurantId, finalBusinessDayId, changeRequ
   }
 
   return changeGiven;
+}
+
+/* =========================================
+   STORE ORDER DENOMINATIONS
+========================================= */
+async function storeOrderDenominations(
+  client,
+  restaurantId,
+  orderId,
+  businessDayId,
+  breakdown,
+  type
+) {
+  if (!breakdown || breakdown.length === 0) return;
+
+  for (const note of breakdown) {
+    const noteValueRaw = note.note ?? note.note_value;
+    const qtyRaw = note.qty ?? note.quantity;
+
+    const noteValue = Number(noteValueRaw);
+    const qty = Number(qtyRaw);
+
+    // 🔥 HARD GUARD (CRITICAL)
+    if (
+      !Number.isFinite(noteValue) ||
+      !Number.isFinite(qty) ||
+      qty <= 0 ||
+      !VALID_DENOMS.includes(noteValue)
+    ) {
+      continue;
+    }
+
+    await client.query(
+      `
+      INSERT INTO order_denominations
+      (restaurant_id, order_id, business_day_id, note_value, quantity, type)
+      VALUES ($1,$2,$3,$4,$5,$6)
+      `,
+      [restaurantId, orderId, businessDayId, noteValue, qty, type]
+    );
+  }
 }
 
 /* =========================================
@@ -229,7 +274,7 @@ const finalBusinessDayId = req.businessDayId
    MIXED PAYMENT
 =============================== */
 
-if (paymentMethod.startsWith("mixed"))  {
+if (paymentMethod?.startsWith("mixed"))  {
 
   if (!cashBreakdown || cashBreakdown.length === 0) {
     throw new Error("Cash breakdown required for mixed payment");
@@ -321,6 +366,39 @@ RETURNING *
 );
 
 const order = orderResult.rows[0];
+
+/* ===============================
+   STORE DENOMINATIONS (CRITICAL)
+=============================== */
+
+
+if (
+  paymentMethod === "cash" ||
+  paymentMethod?.startsWith("mixed") ||
+  (paymentMethod === "unpaid" && paidAmount > 0 && cashBreakdown?.length > 0)
+) {
+
+  await storeOrderDenominations(
+    client,
+    req.restaurantId,
+    order.id,
+    finalBusinessDayId,
+    cashBreakdown,
+    "received"
+  );
+
+  // only cash has change
+  if (paymentMethod === "cash" && changeBreakdown.length > 0) {
+    await storeOrderDenominations(
+      client,
+      req.restaurantId,
+      order.id,
+      finalBusinessDayId,
+      changeBreakdown,
+      "change"
+    );
+  }
+}
 
 
 
@@ -448,7 +526,7 @@ if (paymentMethod === "online" || paymentMethod === "card") {
   });
 }
 
-if (paymentMethod.startsWith("mixed")) {
+if (paymentMethod?.startsWith("mixed")) {
 
   const cashAmount = cashBreakdown.reduce(
     (sum, n) => sum + Number(n.note) * Number(n.qty),
@@ -477,7 +555,7 @@ if (paymentMethod.startsWith("mixed")) {
   }
 }
 
-if (paymentMethod.startsWith("mixed"))  {
+if (paymentMethod?.startsWith("mixed"))  {
 
   const cashAmount = cashBreakdown.reduce(
     (sum, n) => sum + Number(n.note) * Number(n.qty),
@@ -520,12 +598,14 @@ if (paymentMethod === "cash") {
   );
 }
 
-if (paymentMethod.startsWith("mixed"))  {
+if (paymentMethod?.startsWith("mixed"))  {
 
   const cashAmount = cashBreakdown.reduce(
     (sum, n) => sum + Number(n.note) * Number(n.qty),
     0
   );
+
+  
 
   if (cashAmount > 0) {
     await client.query(
@@ -537,6 +617,7 @@ if (paymentMethod.startsWith("mixed"))  {
       [req.restaurantId,finalBusinessDayId, order.id, cashAmount]
     );
   }
+
 }
 
 if (paymentMethod === "unpaid" && paidAmount > 0) {
@@ -581,7 +662,9 @@ router.get("/unpaid", authenticate, async (req, res) => {
         (total - amount_paid) AS due_amount,
         created_at
       FROM orders
-      WHERE restaurant_id=$1 AND is_paid = false
+      WHERE restaurant_id=$1 
+AND is_paid = false
+AND is_deleted = FALSE
       ORDER BY created_at DESC
     `, [req.restaurantId]);
 
@@ -622,6 +705,7 @@ LEFT JOIN order_payments op
   ON op.order_id = o.id
   AND op.restaurant_id = $1
 WHERE o.restaurant_id = $1
+AND o.is_deleted = FALSE
 GROUP BY o.id
 ORDER BY o.created_at DESC
         LIMIT 10
@@ -648,6 +732,7 @@ LEFT JOIN order_payments op
   ON op.order_id = o.id
   AND op.restaurant_id = $1
 WHERE o.restaurant_id = $1
+AND o.is_deleted = FALSE
 GROUP BY o.id
 ORDER BY o.created_at DESC
         `,[req.restaurantId]
@@ -661,6 +746,17 @@ ORDER BY o.created_at DESC
     console.error(err);
     res.status(500).json({ message: "Server error" });
   }
+});
+
+router.get("/deleted", authenticate, requireAdmin, async (req, res) => {
+  const result = await pool.query(
+    `SELECT * FROM orders 
+     WHERE restaurant_id=$1 AND is_deleted=TRUE
+     ORDER BY created_at DESC`,
+    [req.restaurantId]
+  );
+
+  res.json(result.rows);
 });
 
 
@@ -684,7 +780,9 @@ router.get("/bill/:billNumber", authenticate, async (req, res) => {
              customer_phone, payment_method, total,
              is_paid, amount_paid, due_amount, created_at
       FROM orders
-      WHERE restaurant_id=$1 AND bill_number = $2
+      WHERE restaurant_id=$1 
+AND bill_number = $2
+AND is_deleted = FALSE
       `,
       [req.restaurantId,billNumber]
     );
@@ -737,7 +835,9 @@ router.post("/:id/pay", authenticate, async (req, res) => {
        customer_phone, payment_method, total,
        is_paid, amount_paid, due_amount, created_at
 FROM orders
-WHERE restaurant_id=$1 AND id = $2`,
+WHERE restaurant_id=$1 
+AND id = $2
+AND is_deleted = FALSE`,
       [req.restaurantId,id]
     );
 
@@ -819,6 +919,31 @@ WHERE restaurant_id=$1 AND id = $2`,
         id
       ]
     );
+
+    /* ===============================
+   STORE DENOMS FOR UNPAID PAYMENT
+=============================== */
+if (paymentMethod === "cash" && cashBreakdown?.length > 0) {
+  await storeOrderDenominations(
+    client,
+    req.restaurantId,
+    order.id,
+    order.business_day_id,
+    cashBreakdown,
+    "received"
+  );
+
+  if (changeBreakdown.length > 0) {
+    await storeOrderDenominations(
+      client,
+      req.restaurantId,
+      order.id,
+      order.business_day_id,
+      changeBreakdown,
+      "change"
+    );
+  }
+}
 
     /* ===============================
    LEDGER ENTRY FOR CASH PAYMENT
@@ -908,7 +1033,7 @@ router.get("/:id", authenticate, async (req, res) => {
        customer_phone, payment_method, total,
        is_paid, amount_paid, due_amount, created_at
 FROM orders
-WHERE restaurant_id=$1 AND id = $2`,
+WHERE restaurant_id=$1 AND id = $2 AND is_deleted = FALSE`,
       [req.restaurantId,id]
     );
 
@@ -937,6 +1062,314 @@ WHERE oi.restaurant_id=$1 AND oi.order_id = $2
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* =========================================
+   SOFT DELETE ORDER (REVERSIBLE)
+========================================= */
+router.post("/:id/delete", authenticate, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const { id } = req.params;
+
+    await client.query("BEGIN");
+
+    /* ===============================
+       GET ORDER
+    =============================== */
+    const orderRes = await client.query(
+      `SELECT * FROM orders 
+       WHERE restaurant_id=$1 AND id=$2 AND is_deleted=FALSE`,
+      [req.restaurantId, id]
+    );
+
+    if (orderRes.rows.length === 0) {
+      throw new Error("Order not found or already deleted");
+    }
+
+    const order = orderRes.rows[0];
+
+    /* ===============================
+       GET DENOMS
+    =============================== */
+    const denomRes = await client.query(
+      `SELECT note_value, quantity, type 
+       FROM order_denominations
+       WHERE order_id=$1`,
+      [id]
+    );
+
+    /* ===============================
+       REVERSE DENOMS
+    =============================== */
+    for (const row of denomRes.rows) {
+      const { note_value, quantity, type } = row;
+
+      if (type === "received") {
+        // REMOVE from drawer
+        const check = await client.query(
+          `SELECT quantity FROM denominations
+           WHERE restaurant_id=$1 AND business_day_id=$2 AND note_value=$3`,
+          [req.restaurantId, order.business_day_id, note_value]
+        );
+
+        const available = check.rows[0]?.quantity || 0;
+
+        if (available < quantity) {
+          throw new Error(`Cannot delete: ₹${note_value} not available`);
+        }
+
+        await client.query(
+          `UPDATE denominations
+           SET quantity = quantity - $1
+           WHERE restaurant_id=$2 AND business_day_id=$3 AND note_value=$4`,
+          [quantity, req.restaurantId, order.business_day_id, note_value]
+        );
+      }
+
+      if (type === "change") {
+        // ADD BACK to drawer
+        await client.query(
+          `INSERT INTO denominations (restaurant_id,business_day_id,note_value,quantity)
+           VALUES ($1,$2,$3,$4)
+           ON CONFLICT (restaurant_id,business_day_id,note_value)
+           DO UPDATE SET quantity = denominations.quantity + EXCLUDED.quantity`,
+          [req.restaurantId, order.business_day_id, note_value, quantity]
+        );
+      }
+    }
+
+
+    const cashRes = await client.query(
+  `SELECT SUM(amount) as total FROM order_payments 
+   WHERE order_id=$1 AND payment_method='cash'`,
+  [order.id]
+);
+
+const cashAmount = Number(cashRes.rows[0].total || 0);
+    /* ===============================
+       REVERSE CASH LEDGER
+    =============================== */
+    await client.query(
+      `INSERT INTO cash_ledger
+       (restaurant_id,business_day_id,type,reference_id,amount)
+       VALUES ($1,$2,'closing_adjustment',$3,$4)`,
+      [
+        req.restaurantId,
+        order.business_day_id,
+        order.id,
+        -Number(cashAmount|| 0)
+      ]
+    );
+
+    /* ===============================
+       REVERSE BANK (if needed)
+    =============================== */
+    if (
+  order.payment_method === "online" ||
+  order.payment_method === "card" ||
+  order.payment_method.startsWith("mixed")
+) {
+
+      const bankRes = await client.query(
+        `SELECT id FROM bank_accounts WHERE restaurant_id=$1 LIMIT 1`,
+        [req.restaurantId]
+      );
+
+      const bankAccountId = bankRes.rows[0]?.id;
+
+      const paymentRes = await client.query(
+  `SELECT SUM(amount) as total FROM order_payments 
+   WHERE order_id=$1 AND payment_method IN ('online','card')`,
+  [order.id]
+);
+
+const digitalAmount = Number(paymentRes.rows[0].total || 0);
+      if (bankAccountId && digitalAmount > 0) {
+  await addBankTransaction(client, {
+    restaurantId: req.restaurantId,
+    bankAccountId,
+    amount: digitalAmount,
+    type: "debit",
+    source: "order_delete",
+    referenceId: order.id,
+    description: "Order deleted (reversal)"
+  });
+}
+    }
+
+    /* ===============================
+       MARK DELETED
+    =============================== */
+    await client.query(
+      `UPDATE orders
+       SET is_deleted = TRUE
+       WHERE restaurant_id=$1 AND id=$2`,
+      [req.restaurantId, id]
+    );
+
+    await client.query("COMMIT");
+
+    res.json({ message: "Order deleted successfully" });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(400).json({ message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+router.post("/:id/undo-delete", authenticate, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const { id } = req.params;
+
+    await client.query("BEGIN");
+
+    /* ===============================
+       GET ORDER (DELETED)
+    =============================== */
+    const orderRes = await client.query(
+      `SELECT * FROM orders 
+       WHERE restaurant_id=$1 AND id=$2 AND is_deleted=TRUE`,
+      [req.restaurantId, id]
+    );
+
+    if (orderRes.rows.length === 0) {
+      throw new Error("Order not found or not deleted");
+    }
+
+    const order = orderRes.rows[0];
+
+    /* ===============================
+       GET DENOMS
+    =============================== */
+    const denomRes = await client.query(
+      `SELECT note_value, quantity, type 
+       FROM order_denominations
+       WHERE order_id=$1`,
+      [id]
+    );
+
+    /* ===============================
+       RE-APPLY DENOMS
+    =============================== */
+    for (const row of denomRes.rows) {
+      const { note_value, quantity, type } = row;
+
+      if (type === "received") {
+        // ADD BACK to drawer
+        await client.query(
+          `INSERT INTO denominations (restaurant_id,business_day_id,note_value,quantity)
+           VALUES ($1,$2,$3,$4)
+           ON CONFLICT (restaurant_id,business_day_id,note_value)
+           DO UPDATE SET quantity = denominations.quantity + EXCLUDED.quantity`,
+          [req.restaurantId, order.business_day_id, note_value, quantity]
+        );
+      }
+
+      if (type === "change") {
+        // REMOVE AGAIN (since change was given earlier)
+        const check = await client.query(
+          `SELECT quantity FROM denominations
+           WHERE restaurant_id=$1 AND business_day_id=$2 AND note_value=$3`,
+          [req.restaurantId, order.business_day_id, note_value]
+        );
+
+        const available = check.rows[0]?.quantity || 0;
+
+        if (available < quantity) {
+          throw new Error(`Cannot undo: ₹${note_value} not available`);
+        }
+
+        await client.query(
+          `UPDATE denominations
+           SET quantity = quantity - $1
+           WHERE restaurant_id=$2 AND business_day_id=$3 AND note_value=$4`,
+          [quantity, req.restaurantId, order.business_day_id, note_value]
+        );
+      }
+    }
+
+    /* ===============================
+       RE-APPLY CASH LEDGER
+    =============================== */
+    const cashRes = await client.query(
+      `SELECT SUM(amount) as total FROM order_payments 
+       WHERE order_id=$1 AND payment_method='cash'`,
+      [order.id]
+    );
+
+    const cashAmount = Number(cashRes.rows[0].total || 0);
+
+    if (cashAmount > 0) {
+      await client.query(
+        `INSERT INTO cash_ledger
+         (restaurant_id,business_day_id,type,reference_id,amount)
+         VALUES ($1,$2,'sale',$3,$4)`,
+        [req.restaurantId, order.business_day_id, order.id, cashAmount]
+      );
+    }
+
+    /* ===============================
+       RE-APPLY BANK
+    =============================== */
+    if (
+      order.payment_method === "online" ||
+      order.payment_method === "card" ||
+      order.payment_method.startsWith("mixed")
+    ) {
+      const bankRes = await client.query(
+        `SELECT id FROM bank_accounts WHERE restaurant_id=$1 LIMIT 1`,
+        [req.restaurantId]
+      );
+
+      const bankAccountId = bankRes.rows[0]?.id;
+
+      const paymentRes = await client.query(
+        `SELECT SUM(amount) as total FROM order_payments 
+         WHERE order_id=$1 AND payment_method IN ('online','card')`,
+        [order.id]
+      );
+
+      const digitalAmount = Number(paymentRes.rows[0].total || 0);
+
+      if (bankAccountId && digitalAmount > 0) {
+        await addBankTransaction(client, {
+          restaurantId: req.restaurantId,
+          bankAccountId,
+          amount: digitalAmount,
+          type: "credit",
+          source: "order_restore",
+          referenceId: order.id,
+          description: "Order restored"
+        });
+      }
+    }
+
+    /* ===============================
+       MARK RESTORED
+    =============================== */
+    await client.query(
+      `UPDATE orders
+       SET is_deleted = FALSE
+       WHERE restaurant_id=$1 AND id=$2`,
+      [req.restaurantId, id]
+    );
+
+    await client.query("COMMIT");
+
+    res.json({ message: "Order restored successfully" });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(400).json({ message: err.message });
+  } finally {
+    client.release();
   }
 });
 

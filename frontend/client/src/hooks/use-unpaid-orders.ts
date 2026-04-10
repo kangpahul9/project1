@@ -3,7 +3,7 @@ import api from "@/lib/api";
 
 export function useUnpaidOrders() {
   return useQuery({
-    queryKey: ["unpaid-orders"],
+    queryKey: ["unpaid-orders-active"],
     queryFn: async () => {
       const res = await api.get("/orders/unpaid");
       return res.data;
@@ -34,9 +34,14 @@ export function useMarkOrderPaid() {
       return res.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["unpaid-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/orders"] });
-    },
+  queryClient.invalidateQueries({ queryKey: ["unpaid-orders-active"] });
+  queryClient.invalidateQueries({ queryKey: ["/orders"] });
+  queryClient.invalidateQueries({
+  predicate: (query) =>
+    query.queryKey[0] === "current-cash",
+}); 
+  queryClient.invalidateQueries({ queryKey: ["deleted-orders"] }); 
+},
   });
 }
 

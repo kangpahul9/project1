@@ -67,6 +67,7 @@ export default function Pos() {
   //   .slice(0, 8) || [];
   const { data: categories } = useMenuCategories();
   const { data: currentDay } = useCurrentBusinessDay();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user } = useAuthStore();
   const { mutate: createOrder, isPending } = useCreateOrder();
   const { mutate: markPaid } = useMarkOrderPaid();
@@ -156,6 +157,21 @@ export default function Pos() {
       setCustomerPhone(unpaidOrder.customer_phone || "");
     }
   }, [unpaidOrder, isUnpaidPayment]);
+
+  useEffect(() => {
+  const interval = setInterval(() => {
+    const el = document.getElementById("mobile-sidebar");
+    if (!el) return;
+
+    const isVisible =
+      el.classList.contains("opacity-100") &&
+      el.classList.contains("pointer-events-auto");
+
+    setSidebarOpen(isVisible);
+  }, 100);
+
+  return () => clearInterval(interval);
+}, []);
 
   // Auto-fill returning customer from localStorage
   useEffect(() => {
@@ -276,7 +292,7 @@ export default function Pos() {
         }
       }
 
-      
+
       if (method === "upi" || method === "eftpos") {
         payAmount = unpaidOrder.due_amount;
       }
@@ -487,8 +503,8 @@ export default function Pos() {
     <div className="flex flex-col lg:flex-row bg-gray-50 h-screen overflow-hidden">
       <Sidebar />
 
-      <main className="flex-1 lg:ml-64 p-4 sm:p-6 flex flex-col min-w-0 overflow-hidden">
-        <div className="flex items-center gap-3 mb-4">
+<main className="flex-1 lg:ml-64 p-4 sm:p-6 flex flex-col min-w-0 overflow-hidden pb-[60vh] lg:pb-6">
+          <div className="flex items-center gap-3 mb-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-3 text-gray-400" size={18} />
 
@@ -537,7 +553,7 @@ export default function Pos() {
             </Button>
           ))}
         </div>
-        <ScrollArea className="flex-1 w-full overflow-y-auto">
+        <ScrollArea className="flex-1 p-4 overflow-y-auto">
           {/* 🔥 Popular Items
 
 {popularItems.length > 0 && (
@@ -643,8 +659,17 @@ export default function Pos() {
       </main>
 
       {/* CART */}
-      <aside className="w-full lg:w-[380px] xl:w-[420px] bg-white border-t lg:border-l flex flex-col shrink-0 h-full overflow-hidden">
-        {" "}
+<aside
+  className={`
+    flex flex-col bg-white border-t
+
+    fixed bottom-0 left-0 right-0 z-40 h-[55vh]
+    ${sidebarOpen ? "hidden" : "block"}
+
+    lg:static lg:h-full lg:w-[380px] xl:w-[420px]
+    lg:border-t-0 lg:border-l
+  `}
+>   {" "}
         {isUnpaidPayment && unpaidOrder && (
           <div className="bg-amber-100 border border-amber-300 p-3 text-amber-800 text-sm">
             Settling Unpaid Order #{unpaidOrder.id}
@@ -1075,13 +1100,12 @@ export default function Pos() {
       </Dialog>
 
       <Dialog open={menuAdminOpen} onOpenChange={setMenuAdminOpen}>
-        <DialogContent className="max-w-2xl h-[85vh] flex flex-col overflow-hidden">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Menu Management</DialogTitle>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 pr-4 overflow-y-auto">
-            <div className="space-y-6">
+<div className="pr-4">           <div className="space-y-6">
               {/* CATEGORY LIST */}
               <div>
                 <div className="flex justify-between items-center mb-2">
@@ -1160,12 +1184,12 @@ export default function Pos() {
                   </Button>
                 </div>
 
-                <div className="space-y-2 max-h-60 overflow-auto">
+                <div className="space-y-2 max-h-60 ">
                   {menuItems?.map((item: any) => (
                     <div
                       key={item.id}
                       className="flex justify-between items-center border p-2 rounded"
-                    >
+                    >  
                       <div>
                         {item.name}
                         <div className="text-xs text-gray-500">
@@ -1201,7 +1225,7 @@ export default function Pos() {
                 </div>
               </div>
             </div>
-          </ScrollArea>
+          </div>
         </DialogContent>
       </Dialog>
 

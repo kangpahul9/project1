@@ -200,8 +200,9 @@ date: expense.expense_date
   return (
     <div className="flex bg-gray-50 min-h-screen">
       <Sidebar />
-      <main className="flex-1 ml-64 p-8">
-<div className="mb-6 space-y-4">          <h1 className="text-3xl font-bold font-display text-gray-900">
+      <main className="flex-1 ml-0 lg:ml-64 p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8">
+  <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+         <h1 className="text-3xl font-bold font-display text-gray-900">
             Expenses
           </h1>
           <Input
@@ -210,6 +211,7 @@ date: expense.expense_date
   onChange={(e) => setSearchTerm(e.target.value)}
   className="mb-6"
 />
+
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button
@@ -221,7 +223,7 @@ date: expense.expense_date
               </Button>
               
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-lg w-full max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Record New Expense</DialogTitle>
               </DialogHeader>
@@ -243,7 +245,7 @@ date: expense.expense_date
                       </FormItem>
                     )}
                   />
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
                       name="amount"
@@ -557,7 +559,7 @@ date: expense.expense_date
   </Button>
 </div>
 
-  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
     {["supplies","salary","utility","miscellaneous"].map(cat => {
       const total = expenses
         ?.filter((e:any)=>e.category===cat)
@@ -608,14 +610,14 @@ e.staff_name?.toLowerCase().includes(term)
 })
   .map((expense: any) => (
               <Card key={expense.id} className="hover:shadow-md transition-all">
-                <CardContent className="flex items-center justify-between p-6">
+                <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 sm:p-6">
   <div className="flex items-center gap-4">
     <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600">
       <Wallet className="w-5 h-5" />
     </div>
 
     <div>
-      <h3 className="font-semibold text-m ">{expense.description} {expense.category === "supplies" && expense.vendor_name && (
+      <h3 className="font-semibold text-sm sm:text-base flex flex-wrap gap-1">{expense.description} {expense.category === "supplies" && expense.vendor_name && (
   <span className="inline-block mt-1 px-2 py-0.5 text-s bg-blue-50 text-blue-700 rounded-full"> 
     {expense.vendor_name}
   </span>
@@ -663,7 +665,7 @@ e.staff_name?.toLowerCase().includes(term)
     </div>
   </div>
 
-  <div className="flex items-center gap-6">
+  <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-6 w-full sm:w-auto">
     {expense.document_url && (
       <div className="flex items-center gap-3">
         <button
@@ -713,7 +715,7 @@ e.staff_name?.toLowerCase().includes(term)
 </button>
 
     <div className="text-right">
-      <p className="font-bold text-lg text-red-600">
+      <p className="font-bold text-base sm:text-lg text-red-600">
         -₹{expense.amount}
       </p>
       <p className="text-xs text-muted-foreground uppercase">

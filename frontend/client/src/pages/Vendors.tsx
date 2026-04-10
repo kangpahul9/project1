@@ -113,39 +113,67 @@ useEffect(() => {
   return (
     <div className="flex bg-gray-50 min-h-screen">
       <Sidebar />
-      <main className="flex-1 ml-64 p-8">
-        <h1 className="text-3xl font-bold mb-6">Vendors</h1>
+      <main className="flex-1 ml-0 lg:ml-64 p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8">
 
         {/* ADD VENDOR */}
-        <div className="mb-6 flex gap-3">
-          <Input
-            placeholder="Vendor name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <Input
-            placeholder="Phone"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-          />
-<Button type="button" onClick={handleCreate}>
-  Add
-</Button>        </div>
+        <div className="mb-6 space-y-4">
+
+  <h1 className="text-2xl sm:text-3xl font-bold">
+    Vendors
+  </h1>
+
+  <div className="flex flex-col sm:flex-row gap-3">
+
+    <Input
+      placeholder="Vendor name"
+      value={name}
+      onChange={(e) => setName(e.target.value)}
+      className="flex-1"
+    />
+
+    <Input
+      placeholder="Phone"
+      value={phone}
+      onChange={(e) => setPhone(e.target.value)}
+      className="flex-1"
+    />
+
+    <Button
+      type="button"
+      onClick={handleCreate}
+      className="w-full sm:w-auto"
+    >
+      Add Vendor
+    </Button>
+
+  </div>
+</div>
 
         {/* SUMMARY GRID */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {vendors?.map((vendor: any) => (
             <Card
-              key={vendor.id}
-              className="cursor-pointer hover:shadow-lg"
-              onClick={() => setSelectedVendor(vendor)}
-            >
+  key={vendor.id}
+  className={`cursor-pointer transition rounded-xl ${
+  selectedVendor?.id === vendor.id
+    ? "border-primary bg-primary/5 shadow-md"
+    : "hover:shadow-md bg-white"
+}`}
+  onClick={() => setSelectedVendor(vendor)}
+>
               <CardHeader>
                 <CardTitle>{vendor.name}</CardTitle>
               </CardHeader>
               <CardContent>
-                <p>Total Unpaid: ₹{vendor.total_unpaid}</p>
-                <p>Total Paid: ₹{vendor.total_paid}</p>
+                <p className="text-sm text-gray-500">Unpaid</p>
+<p className="text-lg font-bold text-red-600">
+  ₹{vendor.total_unpaid}
+</p>
+
+<p className="text-sm text-gray-500 mt-2">Paid</p>
+<p className="text-lg font-bold text-green-600">
+  ₹{vendor.total_paid}
+</p>
               </CardContent>
             </Card>
           ))}
@@ -160,22 +188,28 @@ useEffect(() => {
 
             {unpaid?.map((expense: any) => (
               <div
-                key={expense.id}
-                className="flex justify-between border p-3 mb-2 rounded"
-              >
-                <div>
-                  ₹{expense.amount} — {expense.description}
-                  <p className="text-sm text-gray-500">
-                    {new Date(expense.created_at).toLocaleDateString()} by{" "}
-                    {expense.uploaded_by}
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={selectedExpenses.includes(expense.id)}
-                  onChange={() => toggleExpense(expense.id)}
-                />
-              </div>
+  key={expense.id}
+  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border p-3 mb-2 rounded-lg bg-white shadow-sm"
+>
+  <div>
+    <p className="font-semibold text-red-600">
+      ₹{expense.amount}
+    </p>
+
+    <p className="text-sm">{expense.description}</p>
+
+    <p className="text-xs text-gray-500">
+      {new Date(expense.created_at).toLocaleDateString()} • {expense.uploaded_by}
+    </p>
+  </div>
+
+  <input
+    type="checkbox"
+    className="w-5 h-5 accent-primary"
+    checked={selectedExpenses.includes(expense.id)}
+    onChange={() => toggleExpense(expense.id)}
+  />
+</div>
             ))}
 
             <h3 className="text-xl font-semibold mt-8 mb-4">
@@ -183,30 +217,34 @@ useEffect(() => {
 </h3>
 
 {settlements?.map((s: any) => (
-  <div
-    key={s.id}
-    className="border p-4 rounded mb-2 bg-gray-50"
-  >
-    <div className="flex justify-between">
-      <span>₹{s.total_paid}</span>
-      <span className="text-sm text-gray-500">
-        {new Date(s.created_at).toLocaleDateString()}
-      </span>
-    </div>
-    <div className="text-sm text-gray-600">
-      Method: {s.payment_method}
-    </div>
+    <div key={s.id} className="p-4 rounded-xl mb-2 bg-white shadow-sm border">
+  <div className="flex justify-between items-center">
+    <span className="font-bold text-green-600">
+      +₹{s.total_paid}
+    </span>
+
+    <span className="text-xs text-gray-500">
+      {new Date(s.created_at).toLocaleDateString()}
+    </span>
   </div>
+
+  <p className="text-xs text-gray-500 mt-1 uppercase">
+    {s.payment_method}
+  </p>
+</div>
 ))}
 
 
 
             {/* SETTLEMENT SECTION */}
             {selectedExpenses.length > 0 && (
-  <div className="mt-6 border p-6 rounded bg-white space-y-4">
-    <div className="text-lg font-semibold">
-      Total Due: ₹{totalSelected}
-    </div>
+  <div className="mt-6 p-6 rounded-xl bg-white space-y-4 shadow-md border">
+    <div className="flex justify-between items-center">
+  <span className="text-sm text-gray-500">Total Due</span>
+  <span className="text-xl font-bold text-red-600">
+    ₹{totalSelected}
+  </span>
+</div>
 
     <Input
   type="number"
@@ -242,16 +280,19 @@ useEffect(() => {
   </div>
 )}
 
-    <select
-      value={paymentMethod}
-      onChange={(e) =>
-        setPaymentMethod(e.target.value as any)
-      }
-      className="border p-2 w-full"
-    >
-      <option value="card">Card</option>
-      <option value="online">Online</option>
-<option value="cash">Cash</option>    </select>
+   <Select
+  value={paymentMethod}
+  onValueChange={(val) => setPaymentMethod(val as any)}
+>
+  <SelectTrigger>
+    <SelectValue />
+  </SelectTrigger>
+  <SelectContent>
+    {/* <SelectItem value="card">Card</SelectItem> */}
+    <SelectItem value="online">Online</SelectItem>
+    <SelectItem value="cash">Cash</SelectItem>
+  </SelectContent>
+</Select>
 
     {paymentMethod === "cash" && (
   <div className="flex items-center gap-2">
@@ -273,7 +314,7 @@ useEffect(() => {
 )}
 
     <Button
-  className="w-full"
+  className="w-full "
   onClick={() => {
   if (!finalAmount || finalAmount <= 0) return;
 

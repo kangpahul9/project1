@@ -47,13 +47,13 @@ useEffect(() => {
 
 
   return (
-    <div className="flex bg-gray-50 min-h-screen">
+    <div className="flex bg-gray-50 min-h-screen pt-16 lg:pt-8">
 
       <Sidebar />
 
-      <main className="flex-1 ml-64 p-8">
+      <main className="flex-1 p-4 md:ml-64 md:p-8">
 
-        <h1 className="text-3xl font-bold mb-6">Settings</h1>
+        <h1 className="text-2xl md:text-3xl font-bold">Settings</h1>
 
 {isLoading ? (
   <p className="text-sm text-gray-500">Checking subscription...</p>
@@ -186,7 +186,7 @@ useEffect(() => {
 
         {/* COMMUNICATION SETTINGS */}
         
-        <div className="bg-white p-6 rounded-xl shadow">
+        <div className="bg-white p-4 md:p-6 rounded-xl shadow">
 
           <h2 className="text-xl font-semibold mb-4">Communication</h2>
 

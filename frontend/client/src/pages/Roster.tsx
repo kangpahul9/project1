@@ -51,15 +51,15 @@ export default function Roster() {
   const days = generateWeek(weekStart);
 
   return (
-    <div className="flex bg-gray-50 min-h-screen">
+    <div className="flex bg-gray-50 min-h-screen pt-16 lg:pt-8">
       <Sidebar />
 
-      <main className="flex-1 ml-64 p-8">
-        {/* HEADER */}
-        <div className="flex justify-between mb-6 items-center">
-          <h1 className="text-3xl font-bold">Staff Roster</h1>
+<main className="flex-1 lg:ml-64">        {/* HEADER */}
+    <div className="px-4 sm:px-6 lg:px-8 py-6 mx-auto">
+<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold">Staff Roster</h1>
 
-          <div className="flex gap-2">
+         <div className="flex gap-2 flex-wrap">
             <Button
               onClick={() =>
                 setWeekStart(
@@ -99,8 +99,8 @@ export default function Roster() {
         </div>
 
         {/* GRID */}
-        <div className="overflow-x-auto bg-white rounded-xl shadow">
-          <div className="min-w-[1000px]">
+<div className="overflow-x-auto bg-white rounded-xl shadow border">
+            <div className="min-w-[1000px] p-3 sm:p-4">
 
             {/* HEADER ROW */}
             <div className="grid grid-cols-8 border-b bg-muted/40">
@@ -133,14 +133,13 @@ export default function Roster() {
                   return (
                     <div
                       key={day}
-                      className="p-2 border-r min-h-[100px] space-y-1"
+                      className="p-2 sm:p-3 border-r min-h-[90px] sm:min-h-[110px] space-y-1"
                     >
                       {/* SHIFTS */}
                       {shifts.map((shift: any) => (
                         <div
                           key={shift.shift_id}
-                          className="bg-green-100 border text-xs p-2 rounded cursor-pointer hover:scale-[1.02] transition"
-                          onClick={() => {
+className="bg-green-100 border border-green-200 text-xs p-2 rounded-md shadow-sm hover:shadow-md transition"                          onClick={() => {
                             setSelectedShift(shift);
                             setSelectedDay(day);
                             setStartTime(shift.shift_start.slice(0, 5));
@@ -275,6 +274,7 @@ export default function Roster() {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </main>
     </div>
   );

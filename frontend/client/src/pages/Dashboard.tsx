@@ -28,6 +28,7 @@ import {
   CheckCircle2,
   Landmark,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -313,11 +314,13 @@ const hasMismatch = Math.abs(difference) > 0.01;
 const showDashboard = !useBusinessDay || currentDay;
 
   return (
-    <div className="flex bg-gray-50 min-h-screen">
+    <div>
       <Sidebar />
 
-      <main className="flex-1 ml-64 p-8">
-        {/* HEADER */}
+<main className="ml-0 lg:ml-64 min-h-screen bg-gray-50 pt-16 lg:pt-0">
+    <div className="px-4 md:px-6 lg:px-10 py-4 md:py-6 lg:py-8 w-full">
+
+       {/* HEADER */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold">Dashboard</h1>
@@ -364,7 +367,7 @@ Business Day: {useBusinessDay ? currentDay?.date : new Date().toLocaleDateString
           
             {/* STATS */}
 {isAdmin && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
               <StatCard
                 title="Today's Sales"
                 value={`₹${totalSales}`}
@@ -406,7 +409,7 @@ Business Day: {useBusinessDay ? currentDay?.date : new Date().toLocaleDateString
 </>)}
           
 {/* ACTION CARDS */}
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-6">
+<div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 mt-6">
 
   {isAdmin && ( <div 
     onClick={() => setWithdrawOpen(true)}
@@ -501,11 +504,7 @@ Business Day: {useBusinessDay ? currentDay?.date : new Date().toLocaleDateString
 ) : null}
 {isAdmin && (<div
   onClick={() => {
-  if (settings?.enable_partners) {
     navigate("/withdrawals-history");
-  } else {
-    setWithdrawHistoryOpen(true);
-  }
 }}
   className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
 >
@@ -524,11 +523,7 @@ Business Day: {useBusinessDay ? currentDay?.date : new Date().toLocaleDateString
 )}
 {isAdmin && (<div
   onClick={() => {
-  if (settings?.enable_partners) {
     navigate("/withdrawals-history");
-  } else {
-    setDepositHistoryOpen(true);
-  }
 }}
   className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border"
 >
@@ -645,25 +640,45 @@ Business Day: {useBusinessDay ? currentDay?.date : new Date().toLocaleDateString
 
 
             {/* ACTIONS */}
-            <div className="mt-10"></div>
-            {isAdmin && (<Link href="/unpaid">
-  <div className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border">
-    <div className="flex items-center gap-4">
-      <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center">
-        <ShoppingBag className="w-7 h-7" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-10">
+
+  {isAdmin && (
+    <Link href="/unpaid">
+      <div className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border h-full">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center">
+            <ShoppingBag className="w-7 h-7" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-lg">Unpaid Orders</h3>
+            <p className="text-sm text-muted-foreground">
+              View pending customer payments
+            </p>
+          </div>
+        </div>
       </div>
-      <div>
-        <h3 className="font-semibold text-lg">Unpaid Orders</h3>
-        <p className="text-sm text-muted-foreground">
-          View pending customer payments
-        </p>
-      </div>
-    </div>
-  </div>
-  
-</Link>
+    </Link>
   )}
 
+  {isAdmin && (
+    <Link href="/deleted-orders">
+      <div className="cursor-pointer bg-white rounded-xl p-6 shadow hover:shadow-lg transition border h-full">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center">
+            <Trash2 className="w-7 h-7" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-lg">Deleted Orders</h3>
+            <p className="text-sm text-muted-foreground">
+              View & restore deleted bills
+            </p>
+          </div>
+        </div>
+      </div>
+    </Link>
+  )}
+
+</div>
             
           </>
            ) : (
@@ -683,7 +698,7 @@ Business Day: {useBusinessDay ? currentDay?.date : new Date().toLocaleDateString
     </Button>
   </div>
         )}
-      </main>
+      </div></main>
 
       {/* ================= DRAWER CASH DIALOG ================= */}
       <Dialog open={cashDialog} onOpenChange={setCashDialog}>
@@ -718,7 +733,7 @@ Business Day: {useBusinessDay ? currentDay?.date : new Date().toLocaleDateString
       </Dialog>
       {/* ================= CLOSE DAY DIALOG ================= */}
 <Dialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen}>
-  <DialogContent className="max-w-3xl">
+  <DialogContent className="w-full max-w-md md:max-w-3xl max-h-[90vh] overflow-hidden">
     <DialogHeader>
       <DialogTitle>Close Business Day</DialogTitle>
       <DialogDescription>
@@ -727,10 +742,12 @@ Business Day: {useBusinessDay ? currentDay?.date : new Date().toLocaleDateString
     </DialogHeader>
 
     {/* 💰 DENOMINATION SELECTOR */}
-    <DenominationSelector
-      breakdown={closingBreakdown}
-      setBreakdown={setClosingBreakdown}
-    />
+    <div className="max-h-[50vh] overflow-y-auto pr-2">
+  <DenominationSelector
+    breakdown={withdrawBreakdown}
+    setBreakdown={setWithdrawBreakdown}
+  />
+</div>
 
     {/* 💵 TOTAL DISPLAY */}
 <div className="text-center text-xl font-bold mt-6">
@@ -786,18 +803,20 @@ Business Day: {useBusinessDay ? currentDay?.date : new Date().toLocaleDateString
 
 {/* ================= WITHDRAW CASH DIALOG ================= */}
 <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
-<DialogContent className="max-w-3xl">
-    <DialogHeader>
+<DialogContent className="w-full max-w-md md:max-w-3xl max-h-[90vh] flex flex-col">
+      <DialogHeader>
       <DialogTitle>Withdraw Cash</DialogTitle>
       <DialogDescription>
         Select notes to withdraw manually from drawer.
       </DialogDescription>
     </DialogHeader>
 
-    <DenominationSelector
-  breakdown={withdrawBreakdown}
-  setBreakdown={setWithdrawBreakdown}
-/>
+    <div className="max-h-[50vh] overflow-y-auto pr-2">
+  <DenominationSelector
+    breakdown={withdrawBreakdown}
+    setBreakdown={setWithdrawBreakdown}
+  />
+</div>
 <div className="mt-4">
   <label className="block text-sm font-medium mb-2">
     Withdrawal Reason
@@ -885,7 +904,7 @@ onChange={(e)=>setWithdrawPartnerId(Number(e.target.value))}
 
 {/* ================= DEPOSIT CASH DIALOG ================= */}
 <Dialog open={depositOpen} onOpenChange={setDepositOpen}>
-  <DialogContent className="max-w-3xl">
+  <DialogContent className="w-full max-w-md md:max-w-3xl max-h-[90vh] overflow-hidden">
     <DialogHeader>
       <DialogTitle>Add Cash to Drawer</DialogTitle>
       <DialogDescription>
@@ -893,10 +912,12 @@ onChange={(e)=>setWithdrawPartnerId(Number(e.target.value))}
       </DialogDescription>
     </DialogHeader>
 
-    <DenominationSelector
-      breakdown={depositBreakdown}
-      setBreakdown={setDepositBreakdown}
-    />
+    <div className="max-h-[50vh] overflow-y-auto pr-2">
+  <DenominationSelector
+    breakdown={withdrawBreakdown}
+    setBreakdown={setWithdrawBreakdown}
+  />
+</div>
 
     <div className="text-lg font-bold pt-4 text-center">
       Total Deposit: ₹{depositTotal}
@@ -970,7 +991,7 @@ onChange={(e)=>setDepositPartnerId(Number(e.target.value))}
     </DialogFooter>
   </DialogContent>
 </Dialog>
-<Dialog open={withdrawHistoryOpen} onOpenChange={setWithdrawHistoryOpen}>
+{/* <Dialog open={withdrawHistoryOpen} onOpenChange={setWithdrawHistoryOpen}>
   <DialogContent className="max-w-2xl">
     <DialogHeader>
       <DialogTitle>Withdrawal History</DialogTitle>
@@ -1027,11 +1048,11 @@ onChange={(e)=>setDepositPartnerId(Number(e.target.value))}
       ))}
     </div>
   </DialogContent>
-</Dialog>
+</Dialog> */}
 
 {/* ================= OPEN DAY DIALOG ================= */}
 <Dialog open={openDialogOpen} onOpenChange={setOpenDialogOpen}>
-<DialogContent className="max-w-3xl">
+<DialogContent className="w-full max-w-md md:max-w-3xl max-h-[90vh] overflow-hidden">
     <DialogHeader>
       <DialogTitle>Open Business Day</DialogTitle>
       <DialogDescription>
@@ -1039,10 +1060,12 @@ onChange={(e)=>setDepositPartnerId(Number(e.target.value))}
       </DialogDescription>
     </DialogHeader>
 
-   <DenominationSelector
-  breakdown={denominations}
-  setBreakdown={setDenominations}
-/>
+   <div className="max-h-[50vh] overflow-y-auto pr-2">
+  <DenominationSelector
+    breakdown={withdrawBreakdown}
+    setBreakdown={setWithdrawBreakdown}
+  />
+</div>
 
 <div className="text-center text-xl font-bold mt-6">
   Opening Cash: ₹{openingTotal}
@@ -1069,7 +1092,7 @@ onChange={(e)=>setDepositPartnerId(Number(e.target.value))}
 </Dialog>
 
 <Dialog open={recountOpen} onOpenChange={setRecountOpen}>
-  <DialogContent className="max-w-3xl">
+  <DialogContent className="w-full max-w-md md:max-w-3xl max-h-[90vh] overflow-hidden">
 
     <DialogHeader>
       <DialogTitle>Recount Drawer Cash</DialogTitle>
@@ -1078,10 +1101,12 @@ onChange={(e)=>setDepositPartnerId(Number(e.target.value))}
       </DialogDescription>
     </DialogHeader>
 
-    <DenominationSelector
-      breakdown={recountBreakdown}
-      setBreakdown={setRecountBreakdown}
-    />
+    <div className="max-h-[50vh] overflow-y-auto pr-2">
+  <DenominationSelector
+    breakdown={withdrawBreakdown}
+    setBreakdown={setWithdrawBreakdown}
+  />
+</div>
 
     <div className="text-xl font-bold text-center mt-6">
       Total Cash: ₹{recountTotal}
@@ -1202,16 +1227,18 @@ onChange={(e)=>setDepositPartnerId(Number(e.target.value))}
 </Dialog>
 
 <Dialog open={cashToBankOpen} onOpenChange={setCashToBankOpen}>
-  <DialogContent className="max-w-3xl">
+  <DialogContent className="w-full max-w-md md:max-w-3xl max-h-[90vh] overflow-hidden">
     <DialogHeader>
       <DialogTitle>Cash → Bank</DialogTitle>
       <DialogDescription>Move cash to bank</DialogDescription>
     </DialogHeader>
 
-    <DenominationSelector
-      breakdown={withdrawBreakdown}
-      setBreakdown={setWithdrawBreakdown}
-    />
+    <div className="max-h-[50vh] overflow-y-auto pr-2">
+  <DenominationSelector
+    breakdown={withdrawBreakdown}
+    setBreakdown={setWithdrawBreakdown}
+  />
+</div>
 
     <div className="text-center font-bold mt-4">
       Total: ₹{withdrawTotal}
@@ -1250,16 +1277,18 @@ onChange={(e)=>setDepositPartnerId(Number(e.target.value))}
 </Dialog>
 
 <Dialog open={bankToCashOpen} onOpenChange={setBankToCashOpen}>
-  <DialogContent className="max-w-3xl">
+  <DialogContent className="w-full max-w-md md:max-w-3xl max-h-[90vh] overflow-hidden">
     <DialogHeader>
       <DialogTitle>Bank → Cash</DialogTitle>
       <DialogDescription>Withdraw cash from bank</DialogDescription>
     </DialogHeader>
 
-    <DenominationSelector
-      breakdown={depositBreakdown}
-      setBreakdown={setDepositBreakdown}
-    />
+    <div className="max-h-[50vh] overflow-y-auto pr-2">
+  <DenominationSelector
+    breakdown={withdrawBreakdown}
+    setBreakdown={setWithdrawBreakdown}
+  />
+</div>
 
     <div className="text-center font-bold mt-4">
       Total: ₹{depositTotal}

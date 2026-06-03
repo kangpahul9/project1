@@ -1,330 +1,266 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useToast } from "@/hooks/use-toast";
+import { get, post, put, del } from "@/lib/api";
+import { toastPromise, toastError } from "@/hooks/use-toast";
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
+// ================= TYPES =================
 
 export interface Staff {
   id: number;
   name: string;
-  role: string | null;
-  phone: string | null;
+  role?: string | null;
+  phone?: string | null;
   salary: number;
   joining_date: string;
   is_active: boolean;
-  balance: number;
+  balance?: number;
+  email?: string;
 }
 
-function getAuthHeaders() {
-  const token = localStorage.getItem("token");
-  return {
-    "Content-Type": "application/json",
-    ...(token && { Authorization: `Bearer ${token}` }),
-  };
+// 🔥 IMPORTANT (backend aligned)
+interface StaffTransactionPayload {
+  staffId: number;
+  amount: number;
+  type: "payment" | "adjustment";
+  reason?: string;
+  payment_method?: "cash" | "online" | "card";
+  deduct_from_galla?: boolean;
+  denominations?: Record<number, number>;
+  businessDayId?: number;
+  partnerId?: number | null;
 }
 
-/* ===============================
-   GET STAFF
-================================ */
+// ================= GET STAFF =================
+
 export function useStaff() {
   return useQuery({
     queryKey: ["staff"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/staff`, {
-        headers: getAuthHeaders(),
-      });
-
-      if (!res.ok) throw new Error("Failed to fetch staff");
-      return res.json();
-    },
+    queryFn: () => get<Staff[]>("/staff"),
+    staleTime: 1000 * 60,
   });
 }
 
-/* ===============================
-   GET STAFF WITH BALANCE
-================================ */
 export function useStaffWithBalance() {
-  return useQuery<Staff[]>({
-    queryKey: ["staff-balance"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/staff/with-balance`, {
-        headers: getAuthHeaders(),
-      });
-
-      if (!res.ok) throw new Error("Failed to fetch balances");
-      return res.json();
-    },
+  return useQuery({
+    queryKey: ["staff", "balance"],
+    queryFn: () => get<Staff[]>("/staff/with-balance"),
+    staleTime: 1000 * 30,
   });
 }
+
+// ================= CREATE =================
 
 export function useCreateStaff() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (data: {
-  name: string;
-  role?: string;
-  phone?: string;
-  salary?: number;
-  opening_balance?: number;
-}) => {
-      const res = await fetch(`${API_BASE}/staff`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(data),
-      });
-
-      if (!res.ok) throw new Error("Failed to create staff");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["staff-balance"] });
-    },
-  });
-}
-
-export function useUpdateStaff() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      id,
-      ...data
-    }: {
-      id: number;
-      name: string;
-      role?: string;
-      phone?: string;
-      salary?: number;
-      joining_date?: string;
-      is_active?: boolean;
-    }) => {
-      const res = await fetch(`${API_BASE}/staff/${id}`, {
-        method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(data),
-      });
-
-      if (!res.ok) throw new Error("Failed to update staff");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["staff-balance"] });
-      queryClient.invalidateQueries({ queryKey: ["staff-summary"] });
-    },
-  });
-}
-
-export function useDeactivateStaff() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`${API_BASE}/staff/${id}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-      });
-
-      if (!res.ok) throw new Error("Failed to deactivate staff");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["staff-balance"] });
-      queryClient.invalidateQueries({ queryKey: ["staff-summary"] });
-    },
-  });
-}
-
-
-export function useStaffTransaction() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-  staffId,
-  amount,
-  type,
-  reason,
-  payment_method,
-  partnerId,
-  deduct_from_galla,
-  denominations,
-  businessDayId,
-}: any) => {
-  const res = await fetch(`${API_BASE}/staff/${staffId}/transaction`, {
-    method: "POST",
-    headers: getAuthHeaders(),
-    body: JSON.stringify({
-      amount,
-      type,
-      reason,
-      payment_method,
-      partnerId,
-      deduct_from_galla,
-      denominations,
-      businessDayId,
-    }),
-  });
-
-  if (!res.ok) throw new Error("Transaction failed");
-  return res.json();
-},
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["staff-balance"] });
-    },
-  });
-}
-
-/* ===============================
-   STAFF SUMMARY
-================================ */
-export function useStaffSummary() {
-  return useQuery({
-    queryKey: ["staff-summary"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/staff/summary`, {
-        headers: getAuthHeaders(),
-      });
-
-      if (!res.ok) throw new Error("Failed to fetch staff summary");
-      return res.json();
-    },
-  });
-}
-
-/* ===============================
-   STAFF HISTORY
-================================ */
-export function useStaffHistory(staffId: number | null) {
-  return useQuery({
-    queryKey: ["staff-history", staffId],
-    enabled: !!staffId,
-    queryFn: async () => {
-      const res = await fetch(
-        `${API_BASE}/staff/${staffId}/history`,
-        { headers: getAuthHeaders() }
-      );
-
-      if (!res.ok) throw new Error("Failed to fetch history");
-      return res.json();
-    },
-  });
-}
-
-export function useRoster(start: string, end: string) {
-  return useQuery({
-    queryKey: ["roster", start, end],
-    queryFn: async () => {
-      const res = await fetch(
-        `${API_BASE}/staff/roster?start=${start}&end=${end}`,
-        { headers: getAuthHeaders() }
-      );
-
-      if (!res.ok) throw new Error("Failed to fetch roster");
-      return res.json();
-    },
-  });
-}
-
-export function useCreateShift() {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
 
   return useMutation({
     mutationFn: async (data: any) => {
-      const res = await fetch(`${API_BASE}/staff/roster`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(data),
-      });
+      const promise = post("/staff", data);
 
-      if (!res.ok) throw new Error("Failed to create shift");
-      return res.json();
+      return toastPromise(promise, {
+        loading: "Creating staff...",
+        success: "Staff created",
+        error: (err) => err.message || "Failed to create staff",
+      });
     },
+
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["roster"] });
+      qc.invalidateQueries({ queryKey: ["staff"] });
+      qc.invalidateQueries({ queryKey: ["staff", "balance"] });
+      qc.invalidateQueries({ queryKey: ["staff-summary"] });
+    },
+
+    onError: (err: any) => {
+      toastError(err.message || "Unable to create staff");
     },
   });
 }
 
-export function useUpdateShift() {
-  const queryClient = useQueryClient();
+// ================= UPDATE =================
+
+export function useUpdateStaff() {
+  const qc = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ id, ...data }: any) => {
-      const res = await fetch(`${API_BASE}/staff/roster/${id}`, {
-        method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(data),
-      });
+      const promise = put(`/staff/${id}`, data);
 
-      if (!res.ok) throw new Error("Failed to update shift");
-      return res.json();
+      return toastPromise(promise, {
+        loading: "Updating staff...",
+        success: "Staff updated",
+        error: (err) => err.message || "Update failed",
+      });
     },
+
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["roster"] });
+      qc.invalidateQueries({ queryKey: ["staff"] });
+      qc.invalidateQueries({ queryKey: ["staff", "balance"] });
+      qc.invalidateQueries({ queryKey: ["staff-summary"] });
+    },
+
+    onError: (err: any) => {
+      toastError(err.message || "Unable to update staff");
     },
   });
 }
 
-export function useDeleteShift() {
-  const queryClient = useQueryClient();
+// ================= DELETE =================
+
+export function useDeleteStaff() {
+  const qc = useQueryClient();
 
   return useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`${API_BASE}/staff/roster/${id}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-      });
+      const promise = del(`/staff/${id}`);
 
-      if (!res.ok) throw new Error("Failed to delete shift");
-      return res.json();
+      return toastPromise(promise, {
+        loading: "Removing staff...",
+        success: "Staff removed",
+        error: (err) => err.message || "Delete failed",
+      });
     },
+
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["roster"] });
+      qc.invalidateQueries({ queryKey: ["staff"] });
+      qc.invalidateQueries({ queryKey: ["staff", "balance"] });
+      qc.invalidateQueries({ queryKey: ["staff-summary"] });
+    },
+
+    onError: (err: any) => {
+      toastError(err.message || "Unable to delete staff");
     },
   });
 }
 
-export function useCopyRoster() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
+// ================= TRANSACTION =================
+
+export function useStaffTransaction() {
+  const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
-      from_date,
-      to_date,
-    }: {
-      from_date: string;
-      to_date: string;
-    }) => {
-      const res = await fetch(`${API_BASE}/staff/roster/copy`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ from_date, to_date }),
-      });
+    mutationFn: async (payload: StaffTransactionPayload) => {
+      const promise = post(`/staff/${payload.staffId}/transaction`, payload);
 
-      if (!res.ok) throw new Error("Failed to copy roster");
-      return res.json();
+      return toastPromise(promise, {
+        loading: "Processing payment...",
+        success: "Transaction completed",
+        error: (err) => err.message || "Transaction failed",
+      });
     },
 
-    // 🔥 SUCCESS HANDLER
+    onSuccess: (_, vars) => {
+      // 🔥 CRITICAL: sync ALL systems touched in backend
+      qc.invalidateQueries({ queryKey: ["staff", "balance"] });
+      qc.invalidateQueries({ queryKey: ["staff-history", vars.staffId] });
+      qc.invalidateQueries({ queryKey: ["staff-summary"] });
+
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+      qc.invalidateQueries({ queryKey: ["current-cash"] });
+      qc.invalidateQueries({ queryKey: ["bank-balance"] });
+      qc.invalidateQueries({ queryKey: ["bank-history"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
+    },
+
+    onError: (err: any) => {
+      toastError(err.message || "Transaction failed");
+    },
+  });
+}
+
+// ================= SUMMARY =================
+
+export interface StaffSummary {
+  totalSalary: number;
+  paidThisMonth: number;
+  unpaidThisMonth: number;
+  totalCredit: number;
+}
+
+export function useStaffSummary() {
+  return useQuery<StaffSummary>({
+    queryKey: ["staff-summary"],
+    queryFn: () => get<StaffSummary>("/staff/summary"),
+    staleTime: 1000 * 30,
+  });
+}
+
+// ================= HISTORY =================
+
+export interface StaffTransaction {
+  id: number;
+  amount: number;
+  type: "payment" | "adjustment";
+  reason?: string;
+  payment_method?: string;
+  created_at: string;
+  expense_id?: number;
+  linked_expense_id?: number;
+}
+
+export function useStaffHistory(staffId?: number) {
+  return useQuery<StaffTransaction[]>({
+    queryKey: ["staff-history", staffId],
+    enabled: !!staffId,
+    queryFn: () => get<StaffTransaction[]>(`/staff/${staffId}/history`),
+  });
+}
+
+// ================= SELF =================
+
+export function useMyStaffProfile() {
+  return useQuery({
+    queryKey: ["staff", "me"],
+    queryFn: () => get("/staff/me"),
+  });
+}
+
+export function useMyStaffHistory() {
+  return useQuery({
+    queryKey: ["staff", "me-history"],
+    queryFn: () => get("/staff/me/history"),
+  });
+}
+
+// ================= EARNINGS =================
+
+export function useStaffEarnings(
+  staffId?: number,
+  start?: string,
+  end?: string,
+  mode: "actual" | "roster" = "actual"
+) {
+  return useQuery({
+    queryKey: ["staff-earnings", staffId, start, end, mode],
+    enabled: !!staffId && !!start && !!end,
+
+    queryFn: () =>
+      get(`/staff/${staffId}/earnings`, {
+        params: { start, end, mode },
+      }),
+  });
+}
+
+// ================= LOGIN UPDATE =================
+
+export function useUpdateStaffLogin() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...data }: any) => {
+      const promise = put(`/staff/${id}/login`, data);
+
+      return toastPromise(promise, {
+        loading: "Updating login...",
+        success: "Login updated",
+        error: (err) => err.message || "Failed to update login",
+      });
+    },
+
     onSuccess: () => {
-      // 1. Refresh UI
-      queryClient.invalidateQueries({ queryKey: ["roster"] });
-
-      // 2. Show success toast
-      toast({
-        title: "Roster copied",
-        description: "Next week's schedule created successfully",
-      });
+      qc.invalidateQueries({ queryKey: ["staff"] });
     },
 
-    // 🔥 ERROR HANDLER (bonus but important)
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to copy roster",
-        variant: "destructive",
-      });
+    onError: (err: any) => {
+      toastError(err.message || "Unable to update login");
     },
   });
 }

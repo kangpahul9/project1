@@ -1,9 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+/// <reference types="vitest" />
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "client", "src"),
@@ -26,7 +28,28 @@ export default defineConfig({
       "/business-days": "http://localhost:3000",
       "/withdrawals": "http://localhost:3000",
       "/reports": "http://localhost:3000",
-      
+      "/staff": "http://localhost:3000",
+      "/cash": "http://localhost:3000",
+      "/bank": "http://localhost:3000",
+      "/settings": "http://localhost:3000",
+      "/restaurant": "http://localhost:3000",
+      "/roster": "http://localhost:3000",
+      "/payroll": "http://localhost:3000",
+      "/billing": "http://localhost:3000",
+      "/xero": "http://localhost:3000",
+      "/ai": "http://localhost:3000",
+      "/combos": "http://localhost:3000",
+      "/eftpos": "http://localhost:3000",
+      "/uploads": "http://localhost:3000",
+    },
+  },
+  test: {
+    globals: true,
+    environment: "jsdom",
+    setupFiles: ["./src/__tests__/setup.ts"],
+    include: ["src/__tests__/**/*.test.{ts,tsx}"],
+    alias: {
+      "@": path.resolve(__dirname, "client", "src"),
     },
   },
 });

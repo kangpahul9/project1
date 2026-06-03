@@ -1,128 +1,139 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useToast } from "@/hooks/use-toast";
+import { get, post } from "@/lib/api";
+import { toastPromise, toastError } from "@/hooks/use-toast";
+import { formatCurrency } from "@/lib/currency";
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
+// ================= TYPES =================
 
-function getAuthHeaders() {
-  const token = localStorage.getItem("token");
-  return {
-    "Content-Type": "application/json",
-    ...(token && { Authorization: `Bearer ${token}` }),
-  };
+interface Denomination {
+  note: number;
+  qty: number;
 }
 
-/* =============================
-   GET CURRENT BUSINESS DAY
-============================= */
+export interface BusinessDay {
+  id: number;
+  date: string;
+  opening_cash: number;
+  is_closed: boolean;
+}
+
+export interface ExpectedCash {
+  businessDayId: number;
+  expectedCash: number;
+}
+
+export interface CloseDayResponse {
+  message: string;
+  expectedCash: number;
+  difference: number;
+  cashSales: number;
+  upiSales: number;
+  expenses: number;
+}
+
+// ================= CURRENT DAY =================
+
 export function useCurrentBusinessDay(useBusinessDay: boolean) {
   return useQuery({
-    queryKey: ["/business-days/current"],
-    enabled: useBusinessDay, // 🚨 important
+    queryKey: ["business-day", "current"],
+    enabled: !!useBusinessDay,
+
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/business-days/current`, {
-        headers: getAuthHeaders(),
-      });
-
-      if (res.status === 204) return null;
-      if (!res.ok) throw new Error("Failed to fetch current business day");
-
-      return await res.json();
+      try {
+        return await get<BusinessDay>("/business-days/current");
+      } catch (err: any) {
+        // 🔥 handle 204 gracefully
+        if (err?.response?.status === 204) return null;
+        throw err;
+      }
     },
+
+    staleTime: 1000 * 30,
   });
 }
 
-/* =============================
-   OPEN BUSINESS DAY
-============================= */
+// ================= OPEN DAY =================
+
 export function useOpenBusinessDay() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
+  const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async (denominations: { note: number; qty: number }[]) => {
-  const res = await fetch(`${API_BASE}/business-days/start`, {
-    method: "POST",
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ denominations }),
-  });
+    mutationFn: async (denominations: Denomination[]) => {
+      const promise = post("/business-days/start", { denominations });
 
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.message);
-  }
-
-  return await res.json();
-},
-
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/business-days/current"] });
-      toast({
-        title: "Business Day Opened",
-        description: "Day started successfully.",
+      return toastPromise(promise, {
+        loading: "Opening business day...",
+        success: "Business day started",
+        error: (err) => err?.message || "Failed to open business day",
       });
     },
 
-    onError: (err: any) => {
-      toast({
-        title: "Error",
-        description: err.message,
-        variant: "destructive",
-      });
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["business-day"] });
+      qc.invalidateQueries({ queryKey: ["expected-cash"] });
+
+      // 🔥 important sync
+      qc.invalidateQueries({ queryKey: ["current-cash"] });
+    },
+
+    onError: () => {
+      toastError("Unable to start business day");
     },
   });
 }
 
-/* =============================
-   CLOSE BUSINESS DAY
-============================= */
+// ================= CLOSE DAY =================
+
 export function useCloseBusinessDay() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
+  const qc = useQueryClient();
 
   return useMutation({
     mutationFn: async (data: {
-      breakdown: { note: number; qty: number }[];
+      breakdown: Denomination[];
       total: number;
       reason?: string | null;
     }) => {
-      const res = await fetch(`${API_BASE}/business-days/close`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(data),
+      const promise = post<CloseDayResponse>("/business-days/close", data);
+
+      return toastPromise(promise, {
+        loading: "Closing business day...",
+        success: (res) =>
+          res.difference !== 0
+            ? `Closed with ${formatCurrency(res.difference)} discrepancy`
+            : "Business day closed successfully",
+        error: (err) => err?.message || "Failed to close business day",
       });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Failed to close business day");
-      }
-
-      return await res.json();
     },
 
     onSuccess: () => {
-  queryClient.invalidateQueries({ queryKey: ["/business-days/current"] });
-  queryClient.invalidateQueries({ queryKey: ["/business-days/expected-cash"] });
+      // 🔥 FULL SYSTEM RESET
+      qc.invalidateQueries({ queryKey: ["business-day"] });
+      qc.invalidateQueries({ queryKey: ["expected-cash"] });
 
-  toast({
-    title: "Business Day Closed",
-    description: "Day closed successfully.",
-  });
-},
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
+
+      qc.invalidateQueries({ queryKey: ["current-cash"] });
+      qc.invalidateQueries({ queryKey: ["withdrawal-history"] });
+      qc.invalidateQueries({ queryKey: ["deposit-history"] });
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+    },
+
+    onError: () => {
+      toastError("Unable to close business day");
+    },
   });
 }
 
-export function useExpectedCash(useBusinessDay: boolean = false) {
+// ================= EXPECTED CASH =================
+
+export function useExpectedCash(useBusinessDay: boolean) {
   return useQuery({
-    queryKey: ["/business-days/expected-cash"],
-    enabled: !!useBusinessDay, // force boolean
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/business-days/expected-cash`, {
-        headers: getAuthHeaders(),
-      });
+    queryKey: ["expected-cash"],
+    enabled: !!useBusinessDay,
 
-      if (!res.ok) throw new Error("Failed to fetch expected cash");
+    queryFn: () => get<ExpectedCash>("/business-days/expected-cash"),
 
-      return await res.json();
-    },
+    staleTime: 1000 * 15,
   });
-} 
+}

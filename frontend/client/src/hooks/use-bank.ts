@@ -1,79 +1,100 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { withApiBase } from "@/lib/api-base";
-import { useToast } from "@/hooks/use-toast";
+import { get, post } from "@/lib/api";
+import { toastPromise, toastError } from "@/hooks/use-toast";
 
-function getAuthHeaders() {
-  const token = localStorage.getItem("token");
+// ================= TYPES =================
 
-  return {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`
-  };
+export interface BankBalance {
+  balance: number;
 }
+
+export type BankSource =
+  | "cash_transfer"
+  | "bank_to_cash"
+  | "owner_deposit"
+  | "owner_withdraw";
+
+export interface BankTransactionPayload {
+  amount: number;
+  type: "credit" | "debit";
+  source: BankSource;
+  description?: string;
+  partnerId?: number | null;
+
+  // 🔥 REQUIRED for cash flows
+  denominations?: Record<number, number>;
+}
+
+export interface BankTransaction {
+  id: number;
+  amount: number;
+  type: "credit" | "debit";
+  source: BankSource;
+  created_at: string;
+  description?: string;
+}
+
+// ================= HELPERS =================
+
+const generateIdempotencyKey = () =>
+  `bank_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+// ================= QUERIES =================
 
 export function useBankBalance() {
   return useQuery({
     queryKey: ["bank-balance"],
-    queryFn: async () => {
-      const res = await fetch(withApiBase("/bank/balance"), {
-        headers: getAuthHeaders()
-      });
-
-      return res.json();
-    }
-  });
-}
-
-export function useBankTransaction() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-
-  return useMutation({
-    mutationFn: async (payload: any) => {
-      const res = await fetch(withApiBase("/bank/transaction"), {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Transaction failed");
-      }
-
-      return res.json();
-    },
-
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["bank-balance"] });
-
-      toast({
-        title: "Success",
-        description: "Bank transaction completed"
-      });
-    },
-
-    onError: (err: any) => {
-      toast({
-        title: "Error",
-        description: err.message,
-        variant: "destructive"
-      });
-    }
+    queryFn: () => get<BankBalance>("/bank/balance"),
+    staleTime: 1000 * 30,
   });
 }
 
 export function useBankHistory() {
   return useQuery({
     queryKey: ["bank-history"],
-    queryFn: async () => {
-      const res = await fetch(withApiBase("/bank/history"), {
-        headers: getAuthHeaders()
+    queryFn: () => get<BankTransaction[]>("/bank/history"),
+    staleTime: 1000 * 30,
+  });
+}
+
+// ================= MUTATION =================
+
+export function useBankTransaction() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: BankTransactionPayload) => {
+      const enrichedPayload = {
+        ...payload,
+        idempotencyKey: generateIdempotencyKey(),
+      };
+
+      const promise = post("/bank/transaction", enrichedPayload);
+
+      return toastPromise(promise, {
+        loading: "Processing transaction...",
+        success:
+          payload.type === "credit"
+            ? "Money added to bank"
+            : "Money withdrawn from bank",
+        error: (err) => err?.message || "Transaction failed",
       });
+    },
 
-      if (!res.ok) throw new Error("Failed to fetch history");
+    onError: (err: any) => {
+  toastError(err?.message || "Transaction failed");
+},
 
-      return res.json();
-    }
+    onSettled: () => {
+  queryClient.invalidateQueries({ queryKey: ["bank-balance"] });
+  queryClient.invalidateQueries({ queryKey: ["bank-history"] });
+
+  // 🔥 CASH SYSTEM
+  queryClient.invalidateQueries({ queryKey: ["current-cash"] });
+  queryClient.invalidateQueries({ queryKey: ["expected-cash"] });
+
+  // 🔥 ANALYTICS
+  queryClient.invalidateQueries({ queryKey: ["reports"] });
+},
   });
 }

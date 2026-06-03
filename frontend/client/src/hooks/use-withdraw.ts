@@ -1,165 +1,190 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useToast } from "@/hooks/use-toast";
+import { get, post } from "@/lib/api";
+import { toastPromise, toastError } from "@/hooks/use-toast";
+import { formatCurrency } from "@/lib/currency";
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
+// ================= TYPES =================
 
-function getAuthHeaders() {
-  const token = localStorage.getItem("token");
-  return {
-    "Content-Type": "application/json",
-    ...(token && { Authorization: `Bearer ${token}` }),
-  };
+export type WithdrawalReason =
+  | "Owner Personal"
+  | "Supplier Payment"
+  | "Bank Deposit"
+  | "Petty Cash"
+  | "Staff Salary"
+  | "Utilities"
+  | "Emergency Expense"
+  | "Loan Repayment"
+  | "Investment Transfer"
+  | "Other";
+
+interface Denomination {
+  note: number;
+  qty: number;
 }
 
-/* ===========================
-   WITHDRAW CASH MUTATION
-=========================== */
+interface WithdrawalResponse {
+  message: string;
+  totalAmount: number;
+}
+
+interface DepositResponse {
+  message: string;
+  totalAmount: number;
+}
+
+interface WithdrawPayload {
+  breakdown: Denomination[];
+  reason: WithdrawalReason;
+  description?: string;
+  partnerId?: number | null;
+}
+
+interface DepositPayload {
+  breakdown: Denomination[];
+  reason?: string;
+  partnerId?: number | null;
+}
+
+// ================= WITHDRAW =================
+
 export function useWithdrawCash() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
+  const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: any) => {
-      const res = await fetch(`${API_BASE}/withdrawals`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(data),
+    mutationFn: async (payload: WithdrawPayload) => {
+      const promise = post<WithdrawalResponse>("/withdrawals", payload);
+
+      return toastPromise(promise, {
+        loading: "Processing withdrawal...",
+        success: (data) => `${formatCurrency(data.totalAmount)} withdrawn`,
+        error: (err) => err?.message || "Withdrawal failed",
       });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Withdrawal failed");
-      }
-
-      return await res.json();
     },
 
     onSuccess: () => {
-      toast({
-        title: "Withdrawal Successful",
-        className: "bg-green-600 text-white",
+      // 💰 CASH SYSTEM
+      qc.invalidateQueries({
+        predicate: (q) => q.queryKey[0] === "current-cash",
       });
+      qc.invalidateQueries({ queryKey: ["expected-cash"] });
 
-      // Refresh drawer + history automatically
-      queryClient.invalidateQueries({ queryKey: ["current-cash"] });
-      queryClient.invalidateQueries({ queryKey: ["withdrawal-history"] });
+      // 📊 REPORTS (🔥 FIXED)
+      qc.invalidateQueries({ queryKey: ["reports"] });
+
+      // 📉 EXPENSES (auto-created for some reasons)
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+
+      // 👥 PARTNERS
+      qc.invalidateQueries({ queryKey: ["partner-ledger"] });
+
+      // 📜 HISTORY
+      qc.invalidateQueries({ queryKey: ["withdrawal-history"] });
+
+      // 🧾 BUSINESS DAY SUMMARY
+      qc.invalidateQueries({ queryKey: ["business-day"] });
     },
 
-    onError: (error: any) => {
-      toast({
-        title: "Withdrawal Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+    onError: () => {
+      toastError("Unable to withdraw cash");
     },
   });
 }
 
-/* ===========================
-   WITHDRAWAL HISTORY QUERY
-=========================== */
-export function useWithdrawalHistory(
-  filters?: {
-    from?: string;
-    to?: string;
-    businessDayId?: number;
-  }
-) {
-  return useQuery({
+// ================= HISTORY TYPES =================
+
+export interface CashFlowRecord {
+  id: number;
+  amount: number;
+  reason: string;
+  created_at: string;
+  owner_name?: string;
+}
+
+// ================= WITHDRAWAL HISTORY =================
+
+export function useWithdrawalHistory(filters?: {
+  from?: string;
+  to?: string;
+  reason?: string;
+  partnerId?: number;
+  limit?: number;
+  offset?: number;
+}) {
+  return useQuery<CashFlowRecord[]>({
     queryKey: ["withdrawal-history", filters],
+
     queryFn: async () => {
-      const params = new URLSearchParams();
-
-      if (filters?.from) params.append("from", filters.from);
-      if (filters?.to) params.append("to", filters.to);
-      if (filters?.businessDayId)
-        params.append("businessDayId", String(filters.businessDayId));
-
-      const res = await fetch(
-        `${API_BASE}/withdrawals/history?${params.toString()}`,
-        {
-          headers: getAuthHeaders(),
-        }
-      );
-
-      if (!res.ok) {
-        throw new Error("Failed to fetch withdrawal history");
-      }
-
-      return await res.json();
+      const res = await get<{ data: CashFlowRecord[] }>("/withdrawals/history", {
+        params: filters,
+      });
+      return res.data;
     },
 
-    enabled: true,
+    staleTime: 1000 * 10,
   });
 }
 
-/* ===========================
-   DEPOSIT CASH MUTATION
-=========================== */
+// ================= DEPOSIT =================
+
 export function useDepositCash() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
+  const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: any) => {
-      const res = await fetch(`${API_BASE}/withdrawals/deposit`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(data),
+    mutationFn: async (payload: DepositPayload) => {
+      const promise = post<DepositResponse>("/withdrawals/deposit", payload);
+
+      return toastPromise(promise, {
+        loading: "Adding cash...",
+        success: (data) => `${formatCurrency(data.totalAmount)} added`,
+        error: (err) => err?.message || "Deposit failed",
       });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Deposit failed");
-      }
-
-      return await res.json();
     },
 
     onSuccess: () => {
-      toast({
-        title: "Cash Added Successfully",
-        className: "bg-green-600 text-white",
+      // 💰 CASH
+      qc.invalidateQueries({
+        predicate: (q) => q.queryKey[0] === "current-cash",
       });
 
-      queryClient.invalidateQueries({ queryKey: ["current-cash"] });
-      queryClient.invalidateQueries({ queryKey: ["deposit-history"] });
+      qc.invalidateQueries({ queryKey: ["expected-cash"] });
+
+      // 📊 REPORTS
+      qc.invalidateQueries({ queryKey: ["reports"] });
+
+      // 👥 PARTNERS
+      qc.invalidateQueries({ queryKey: ["partner-ledger"] });
+
+      // 📜 HISTORY
+      qc.invalidateQueries({ queryKey: ["deposit-history"] });
+
+      qc.invalidateQueries({ queryKey: ["business-day"] });
     },
 
-    onError: (error: any) => {
-      toast({
-        title: "Deposit Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+    onError: () => {
+      toastError("Unable to deposit cash");
     },
   });
 }
+
+// ================= DEPOSIT HISTORY =================
 
 export function useDepositHistory(filters?: {
   from?: string;
   to?: string;
+  partnerId?: number;
+  limit?: number;
+  offset?: number;
 }) {
-  return useQuery({
+  return useQuery<CashFlowRecord[]>({
     queryKey: ["deposit-history", filters],
+
     queryFn: async () => {
-      const params = new URLSearchParams();
-
-      if (filters?.from) params.append("from", filters.from);
-      if (filters?.to) params.append("to", filters.to);
-
-      const res = await fetch(
-        `${API_BASE}/withdrawals/deposits-history?${params.toString()}`,
-        {
-          headers: getAuthHeaders(),
-        }
-      );
-
-      if (!res.ok) {
-        throw new Error("Failed to fetch deposit history");
-      }
-
-      return await res.json();
+      const res = await get<{ data: CashFlowRecord[] }>("/withdrawals/deposits-history", {
+        params: filters,
+      });
+      return res.data;
     },
+
+    staleTime: 1000 * 10,
   });
 }

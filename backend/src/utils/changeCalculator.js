@@ -1,4 +1,6 @@
 export function calculateChange(changeAmount, drawerDenoms) {
+  let remaining = Math.round(changeAmount * 100);
+
   const sorted = [...drawerDenoms].sort(
     (a, b) => b.note_value - a.note_value
   );
@@ -6,9 +8,11 @@ export function calculateChange(changeAmount, drawerDenoms) {
   const result = [];
 
   for (const denom of sorted) {
-    if (changeAmount <= 0) break;
+    if (remaining <= 0) break;
 
-    const maxNotes = Math.floor(changeAmount / denom.note_value);
+    const note = Math.round(denom.note_value * 100);
+
+    const maxNotes = Math.floor(remaining / note);
     const usable = Math.min(maxNotes, denom.quantity);
 
     if (usable > 0) {
@@ -17,13 +21,11 @@ export function calculateChange(changeAmount, drawerDenoms) {
         quantity: usable,
       });
 
-      changeAmount -= usable * denom.note_value;
+      remaining -= usable * note;
     }
   }
 
-  if (changeAmount !== 0) {
-    return null; // not possible
-  }
+  if (remaining !== 0) return null;
 
   return result;
 }

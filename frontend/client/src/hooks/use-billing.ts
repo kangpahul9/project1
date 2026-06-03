@@ -1,61 +1,53 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { withApiBase } from "@/lib/api-base";
-import { useToast } from "@/hooks/use-toast";
+import { get, post } from "@/lib/api";
+import { toastPromise, toastError } from "@/hooks/use-toast";
 
-function getAuthHeaders() {
-  const token = localStorage.getItem("token");
+// ================= TYPES =================
 
-  return {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`
-  };
+interface CheckoutResponse {
+  url: string;
 }
 
-export function useCreateCheckout() {
-  const { toast } = useToast();
+export interface Subscription {
+  subscription_status: "active" | "inactive" | "trialing" | "past_due";
+  subscription_valid_till: string | null;
+}
 
+// ================= CREATE CHECKOUT =================
+
+export function useCreateCheckout() {
   return useMutation({
     mutationFn: async () => {
-      const res = await fetch(withApiBase("/billing/create-checkout"), {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({  }),
+      const promise = post<CheckoutResponse>("/billing/create-checkout", {});
+
+      return toastPromise(promise, {
+        loading: "Redirecting to payment...",
+        success: "Opening checkout...",
+        error: (err) => err?.message || "Failed to start payment",
       });
-
-      if (!res.ok) throw new Error("Checkout failed");
-
-      return res.json();
     },
 
     onSuccess: (data) => {
-      window.location.href = data.url;
+      // 🔥 slight delay so user actually sees toast
+      setTimeout(() => {
+        window.location.href = data.url;
+      }, 500);
     },
 
     onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to start payment",
-        variant: "destructive",
-      });
+      toastError("Unable to initiate payment");
     },
   });
 }
 
+// ================= SUBSCRIPTION =================
+
 export function useSubscription() {
   return useQuery({
     queryKey: ["subscription"],
-    queryFn: async () => {
-      const token = localStorage.getItem("token");
+    queryFn: () => get<Subscription>("/billing/subscription"),
 
-      const res = await fetch(withApiBase("/billing/subscription"), {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!res.ok) throw new Error("Failed to fetch subscription");
-
-      return res.json();
-    },
+    staleTime: 1000 * 60,
+    retry: 1,
   });
 }

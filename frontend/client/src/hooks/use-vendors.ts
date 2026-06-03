@@ -1,144 +1,231 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useToast } from "@/hooks/use-toast";
+import { get, post, put, del } from "@/lib/api";
+import { toastPromise, toastError, toastSuccess } from "@/hooks/use-toast";
+import { formatCurrency } from "@/lib/currency";
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
+// ================= TYPES =================
 
-function getAuthHeaders() {
-  const token = localStorage.getItem("token");
-  return {
-    "Content-Type": "application/json",
-    ...(token && { Authorization: `Bearer ${token}` }),
-  };
+type PaymentMethod = "card" | "online" | "cash";
+
+interface Vendor {
+  id: number;
+  name: string;
+  phone?: string;
+  is_active: boolean;
 }
 
-/* ===============================
-   VENDOR SUMMARY
-================================ */
-export function useVendorSummary() {
-  return useQuery({
-    queryKey: ["vendors-summary"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/vendors/summary`, {
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) throw new Error("Failed to fetch vendor summary");
-      return res.json();
-    },
-  });
-}
-
-/* ===============================
-   CREATE VENDOR
-================================ */
-export function useCreateVendor() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-
-  return useMutation({
-    mutationFn: async (vendor: { name: string; phone?: string }) => {
-      const res = await fetch(`${API_BASE}/vendors`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(vendor),
-      });
-
-      if (!res.ok) throw new Error("Failed to create vendor");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["vendors-summary"] });
-      toast({ title: "Success", description: "Vendor added successfully" });
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to add vendor", variant: "destructive" });
-    },
-  });
-}
-
-/* ===============================
-   GET UNPAID EXPENSES
-================================ */
-export function useVendorUnpaid(vendorId?: number) {
-  return useQuery({
-    queryKey: ["vendor-unpaid", vendorId],
-    enabled: !!vendorId,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
-    staleTime: 0,
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/vendors/${vendorId}/unpaid`, {
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) throw new Error("Failed to fetch unpaid expenses");
-      return res.json();
-    },
-  });
-}
-
-/* ===============================
-   SETTLE VENDOR
-================================ */
-/* ===============================
-   SETTLE VENDOR
-================================ */
-export function useSettleVendor(vendorId?: number) {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-
-  return useMutation({
-    mutationFn: async (payload: {
+interface VendorSettlementPayload {
   expenseIds: number[];
-  payment_method: "card" | "online" | "cash";
+  payment_method: PaymentMethod;
   final_amount: number;
   deduct_from_galla?: boolean;
   partnerId?: number | null;
-  denominations?: { [key: number]: number };
-}) => {
-      if (!vendorId) throw new Error("Vendor ID missing");
+  denominations?: Record<string, number>;
+}
 
-      const res = await fetch(`${API_BASE}/vendors/${vendorId}/settle`, {
-        method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(payload),
+interface VendorPayment {
+  id: number;
+  total_paid: number;
+  payment_method: PaymentMethod;
+  created_at: string;
+  created_by: string;
+}
+
+interface VendorSettlementResponse {
+  message: string;
+  settlement_id: number;
+  total_due: number;
+  total_paid: number;
+  difference: number;
+}
+
+interface VendorSummary {
+  id: number;
+  name: string;
+  total_due?: number;
+  total_paid?: number;
+  phone?: string;
+}
+
+export interface VendorExpense {
+  id: number;
+  amount: number;
+  description?: string;
+  created_at: string;
+  category?: string;
+}
+
+export interface VendorSettlement {
+  id: number;
+  total_paid: number;
+  payment_method: string;
+  created_at: string;
+}
+
+// ================= GET VENDORS =================
+
+export function useVendors() {
+  return useQuery({
+    queryKey: ["vendors"],
+    queryFn: () => get<Vendor[]>("/vendors"),
+    staleTime: 1000 * 30,
+  });
+}
+
+// ================= SUMMARY =================
+
+export function useVendorSummary() {
+  return useQuery<VendorSummary[]>({
+    queryKey: ["vendors-summary"],
+    queryFn: () => get<VendorSummary[]>("/vendors/summary"),
+    staleTime: 1000 * 30,
+  });
+}
+// ================= BALANCE VIEW =================
+
+export function useVendorBalances() {
+  return useQuery({
+    queryKey: ["vendors-balance"],
+    queryFn: () => get("/vendors/with-balance"),
+  });
+}
+
+// ================= CREATE =================
+
+export function useCreateVendor() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (vendor: { name: string; phone?: string }) => {
+      const promise = post("/vendors", vendor);
+
+      return toastPromise(promise, {
+        loading: "Adding vendor...",
+        success: "Vendor added",
+        error: (err) => err?.message || "Failed to add vendor",
       });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.message || "Settlement failed");
-      }
-
-      return res.json();
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["vendors-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["vendor-unpaid"] });
-      queryClient.invalidateQueries({ queryKey: ["expenses"] });
 
-      toast({
-        title: "Settlement Successful",
-        description: `Paid ₹${data.total_paid}`,
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.message || "Settlement failed",
-        variant: "destructive",
-      });
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["vendors"] });
+      qc.invalidateQueries({ queryKey: ["vendors-summary"] });
     },
   });
 }
 
+// ================= DELETE (DEACTIVATE) =================
+
+export function useDeleteVendor() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const promise = del(`/vendors/${id}`);
+
+      return toastPromise(promise, {
+        loading: "Removing vendor...",
+        success: "Vendor deactivated",
+        error: "Delete failed",
+      });
+    },
+
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["vendors"] });
+      qc.invalidateQueries({ queryKey: ["vendors-summary"] });
+    },
+  });
+}
+
+// ================= UNPAID =================
+
+export function useVendorUnpaid(vendorId?: number) {
+  return useQuery<VendorExpense[]>({
+    queryKey: ["vendor-unpaid", vendorId],
+    enabled: !!vendorId,
+    queryFn: () => get<VendorExpense[]>(`/vendors/${vendorId}/unpaid`),
+  });
+}
+
+// ================= SETTLEMENT =================
+
+export function useSettleVendor(vendorId?: number) {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: VendorSettlementPayload) => {
+      if (!vendorId) throw new Error("Vendor ID missing");
+
+      const promise = put<VendorSettlementResponse>(
+        `/vendors/${vendorId}/settle`,
+        payload
+      );
+
+      return toastPromise(promise, {
+        loading: "Processing settlement...",
+        success: (data) =>
+          `Paid ${formatCurrency(data.total_paid)} • Remaining ${formatCurrency(data.difference)}`,
+        error: (err) => err?.message || "Settlement failed",
+      });
+    },
+
+    onSuccess: () => {
+      // 🔥 CORE SYSTEM
+
+      qc.invalidateQueries({ queryKey: ["vendors-summary"] });
+      qc.invalidateQueries({ queryKey: ["vendors"] });
+      qc.invalidateQueries({ queryKey: ["vendors-balance"] });
+      qc.invalidateQueries({ queryKey: ["vendor-unpaid"] });
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+
+      // 💰 CASH SYSTEM
+      qc.invalidateQueries({
+        predicate: (q) => q.queryKey[0] === "current-cash",
+      });
+      qc.invalidateQueries({ queryKey: ["expected-cash"] });
+
+      // 🏦 BANK SYSTEM
+      qc.invalidateQueries({ queryKey: ["bank-balance"] });
+      qc.invalidateQueries({ queryKey: ["bank-history"] });
+
+      // 📊 REPORTS (🔥 FIXED)
+      qc.invalidateQueries({ queryKey: ["reports"] });
+    },
+
+    onError: () => {
+      toastError("Unable to settle vendor");
+    },
+  });
+}
+
+// ================= SETTLEMENT HISTORY =================
+
 export function useVendorSettlements(vendorId?: number) {
-  return useQuery({
+  return useQuery<VendorSettlement[]>({
     queryKey: ["vendor-settlements", vendorId],
     enabled: !!vendorId,
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/vendors/${vendorId}/settlements`, {
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) throw new Error("Failed to fetch settlements");
-      return res.json();
-    },
+    queryFn: () => get<VendorSettlement[]>(`/vendors/${vendorId}/settlements`),
+  });
+}
+
+// ================= PAYMENTS =================
+
+export function useVendorPayments(vendorId?: number) {
+  return useQuery({
+    queryKey: ["vendor-payments", vendorId],
+    enabled: !!vendorId,
+    queryFn: () => get(`/vendors/${vendorId}/payments`),
+  });
+}
+
+// ================= LEDGER =================
+
+export function useVendorLedger(
+  vendorId?: number,
+  enabled: boolean = true
+) {
+  return useQuery({
+    queryKey: ["vendor-ledger", vendorId],
+    enabled: !!vendorId && enabled,
+    queryFn: () => get(`/vendors/${vendorId}/ledger`),
   });
 }

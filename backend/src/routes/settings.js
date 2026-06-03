@@ -1,42 +1,78 @@
 import express from "express";
 import pool from "../config/db.js";
-import { authenticate } from "../middleware/authMiddleware.js";
+import QRCode from "qrcode";
+import { authenticate, requireAdmin } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
+export async function updateCurrency(req, res) {
+  try {
+    const { currency_code } = req.body;
+
+    const allowed = ["AUD", "INR"];
+    if (!allowed.includes(currency_code)) {
+      return res.status(400).json({ message: "Invalid currency" });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE restaurant_settings
+      SET currency_code = $1
+      WHERE restaurant_id = $2
+      RETURNING *
+      `,
+      [currency_code, req.restaurantId]
+    );
+
+    res.json({ settings: result.rows[0] });
+
+  } catch (err) {
+    req.log.error({ err }, "Currency update failed");
+    res.status(500).json({ message: "Currency update failed" });
+  }
+}
+
+
+// =========================================
+// UPDATE CURRENCY
+// =========================================
+router.put("/currency", authenticate, requireAdmin, updateCurrency);
 
 // =========================================
 // GET SYSTEM SETTINGS
 // =========================================
 router.get("/", authenticate, async (req, res) => {
-  try {
+  const isAdmin = req.role === "ADMIN";
+  // EFTPOS credentials are only returned to admins; all users get feature flags
+  const selectCols = isAdmin
+    ? "*"
+    : `restaurant_id, use_business_day, enable_cash_recount, allow_staff_print,
+       enable_vendor_ledger, enable_customer_ledger, enable_email, enable_partners,
+       enable_manual_change, use_payroll, payroll_provider,
+       currency_code, currency_symbol, currency_locale,
+       payid, payid_name, eftpos_provider, created_at, updated_at`;
 
-    const result = await pool.query(
-      `
-      SELECT *
-      FROM restaurant_settings
-      WHERE restaurant_id = $1
-      `,
+  try {
+    let result = await pool.query(
+      `SELECT ${selectCols} FROM restaurant_settings WHERE restaurant_id = $1 LIMIT 1`,
       [req.restaurantId]
     );
 
-    if (result.rows.length === 0) {
-      const inserted = await pool.query(
-        `
-        INSERT INTO restaurant_settings (restaurant_id)
-        VALUES ($1)
-        RETURNING *
-        `,
+    if (!result.rows.length) {
+      await pool.query(
+        `INSERT INTO restaurant_settings (restaurant_id) VALUES ($1)`,
         [req.restaurantId]
       );
-
-      return res.json(inserted.rows[0]);
+      result = await pool.query(
+        `SELECT ${selectCols} FROM restaurant_settings WHERE restaurant_id = $1 LIMIT 1`,
+        [req.restaurantId]
+      );
     }
 
     res.json(result.rows[0]);
 
   } catch (err) {
-    console.error(err);
+    req.log.error({ err }, "GET /settings error");
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -45,9 +81,8 @@ router.get("/", authenticate, async (req, res) => {
 // =========================================
 // UPDATE SYSTEM SETTINGS
 // =========================================
-router.put("/", authenticate, async (req, res) => {
+router.put("/", authenticate, requireAdmin, async (req, res) => {
   try {
-
     const {
       use_business_day,
       enable_cash_recount,
@@ -57,9 +92,43 @@ router.put("/", authenticate, async (req, res) => {
       enable_whatsapp,
       enable_email,
       enable_partners,
-      upi_id
+      use_payroll,
+      upi_id,
+      payid,
+      payid_name,
+      eftpos_provider,
+      eftpos_api_key,
+      eftpos_merchant_id,
+      eftpos_terminal_id,
     } = req.body;
 
+    // 🔥 Get currency first
+    const currencyRes = await pool.query(
+      `SELECT currency_code FROM restaurant_settings WHERE restaurant_id=$1`,
+      [req.restaurantId]
+    );
+
+    const currency = currencyRes.rows[0]?.currency_code;
+
+    /* =========================
+       VALIDATION
+    ========================= */
+
+    if (currency === "INR") {
+      if (upi_id && !upi_id.includes("@")) {
+        return res.status(400).json({ message: "Invalid UPI ID" });
+      }
+    }
+
+    if (currency === "AUD") {
+      if (payid && payid.length < 5) {
+        return res.status(400).json({ message: "Invalid PayID" });
+      }
+    }
+
+    /* =========================
+       UPDATE
+    ========================= */
     const result = await pool.query(
       `
       UPDATE restaurant_settings
@@ -72,9 +141,19 @@ router.put("/", authenticate, async (req, res) => {
         enable_whatsapp = $6,
         enable_email = $7,
         enable_partners = $8,
-        upi_id = $9,
+        use_payroll = $9,
+
+        upi_id = $10,
+        payid = $11,
+        payid_name = $12,
+
+        eftpos_provider = $13,
+        eftpos_api_key = $14,
+        eftpos_merchant_id = $15,
+        eftpos_terminal_id = $16,
+
         updated_at = NOW()
-      WHERE restaurant_id = $10
+      WHERE restaurant_id = $17
       RETURNING *
       `,
       [
@@ -86,7 +165,17 @@ router.put("/", authenticate, async (req, res) => {
         enable_whatsapp,
         enable_email,
         enable_partners,
-        upi_id,
+        use_payroll ?? false,
+
+        upi_id?.trim() || null,
+        payid?.trim() || null,
+        payid_name?.trim() || null,
+
+        eftpos_provider || null,
+        eftpos_api_key?.trim() || null,
+        eftpos_merchant_id?.trim() || null,
+        eftpos_terminal_id?.trim() || null,
+
         req.restaurantId
       ]
     );
@@ -94,7 +183,7 @@ router.put("/", authenticate, async (req, res) => {
     res.json(result.rows[0]);
 
   } catch (err) {
-    console.error(err);
+    req.log.error({ err }, "PUT /settings error");
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -105,17 +194,17 @@ router.put("/", authenticate, async (req, res) => {
 // =========================================
 router.get("/communication", authenticate, async (req, res) => {
   try {
-
-    const result = await pool.query(
+    let result = await pool.query(
       `
       SELECT *
       FROM communication_settings
       WHERE restaurant_id = $1
+      LIMIT 1
       `,
       [req.restaurantId]
     );
 
-    if (result.rows.length === 0) {
+    if (!result.rows.length) {
       const inserted = await pool.query(
         `
         INSERT INTO communication_settings (restaurant_id)
@@ -125,24 +214,22 @@ router.get("/communication", authenticate, async (req, res) => {
         [req.restaurantId]
       );
 
-      return res.json(inserted.rows[0]);
+      result = inserted;
     }
 
     res.json(result.rows[0]);
 
   } catch (err) {
-    console.error(err);
+    req.log.error({ err }, "GET /communication error");
     res.status(500).json({ message: "Server error" });
   }
 });
 
-
 // =========================================
 // UPDATE COMMUNICATION SETTINGS
 // =========================================
-router.put("/communication", authenticate, async (req, res) => {
+router.put("/communication", authenticate, requireAdmin, async (req, res) => {
   try {
-
     const {
       send_bill_whatsapp,
       send_bill_email,
@@ -151,6 +238,10 @@ router.put("/communication", authenticate, async (req, res) => {
       owner_phone,
       owner_email
     } = req.body;
+
+    if (owner_email && !owner_email.includes("@")) {
+      return res.status(400).json({ message: "Invalid email" });
+    }
 
     const result = await pool.query(
       `
@@ -171,8 +262,8 @@ router.put("/communication", authenticate, async (req, res) => {
         send_bill_email,
         notify_owner_whatsapp,
         notify_owner_email,
-        owner_phone,
-        owner_email,
+        owner_phone?.trim() || null,
+        owner_email?.trim() || null,
         req.restaurantId
       ]
     );
@@ -180,30 +271,78 @@ router.put("/communication", authenticate, async (req, res) => {
     res.json(result.rows[0]);
 
   } catch (err) {
-    console.error(err);
+    req.log.error({ err }, "PUT /communication error");
     res.status(500).json({ message: "Server error" });
   }
 });
 
 router.get("/bank-account", authenticate, async (req, res) => {
-  const result = await pool.query(
-    `SELECT * FROM bank_accounts WHERE restaurant_id=$1 LIMIT 1`,
-    [req.restaurantId]
-  );
+  try {
+    const result = await pool.query(
+      `
+      SELECT 
+        id,
+        name as bank_name,
+        account_number,
+        ifsc,
+        account_holder,
+        created_at
+      FROM bank_accounts
+      WHERE restaurant_id=$1
+      ORDER BY id ASC
+      LIMIT 1
+      `,
+      [req.restaurantId]
+    );
 
-  res.json(result.rows[0] || null);
+    res.json(result.rows[0] || null);
+
+  } catch (err) {
+    req.log.error({ err }, "GET /bank-account error");
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
-router.post("/bank-account", authenticate, async (req, res) => {
-  const { bank_name, account_number, ifsc, account_holder, opening_balance } = req.body;
+router.post("/bank-account", authenticate, requireAdmin, async (req, res) => {
+  const {
+    bank_name,
+    account_number,
+    ifsc,
+    account_holder,
+    opening_balance
+  } = req.body;
 
   const client = await pool.connect();
 
   try {
+    /* =========================
+       VALIDATION
+    ========================= */
+    if (!bank_name || !bank_name.trim()) {
+      throw new Error("Bank name required");
+    }
+
+    if (!account_number || account_number.length < 6) {
+      throw new Error("Invalid account number");
+    }
+
+    if (!account_holder || !account_holder.trim()) {
+      throw new Error("Account holder required");
+    }
+
+    const opening = Number(opening_balance || 0);
+
+    if (isNaN(opening) || opening < 0) {
+      throw new Error("Invalid opening balance");
+    }
+
     await client.query("BEGIN");
 
+    /* =========================
+       PREVENT DUPLICATE
+    ========================= */
     const existing = await client.query(
-      `SELECT id FROM bank_accounts WHERE restaurant_id=$1`,
+      `SELECT id FROM bank_accounts WHERE restaurant_id=$1 FOR UPDATE`,
       [req.restaurantId]
     );
 
@@ -211,6 +350,9 @@ router.post("/bank-account", authenticate, async (req, res) => {
       throw new Error("Bank account already exists");
     }
 
+    /* =========================
+       INSERT BANK ACCOUNT
+    ========================= */
     const result = await client.query(
       `
       INSERT INTO bank_accounts
@@ -218,13 +360,21 @@ router.post("/bank-account", authenticate, async (req, res) => {
       VALUES ($1,$2,$3,$4,$5)
       RETURNING *
       `,
-      [req.restaurantId, bank_name, account_number, ifsc, account_holder]
+      [
+        req.restaurantId,
+        bank_name.trim(),
+        account_number.trim(),
+        ifsc?.trim() || null,
+        account_holder.trim()
+      ]
     );
 
     const bankAccount = result.rows[0];
 
-    // 🔥 Opening balance entry
-    if (opening_balance && Number(opening_balance) > 0) {
+    /* =========================
+       OPENING BALANCE ENTRY
+    ========================= */
+    if (opening > 0) {
       await client.query(
         `
         INSERT INTO bank_transactions
@@ -234,7 +384,22 @@ router.post("/bank-account", authenticate, async (req, res) => {
         [
           req.restaurantId,
           bankAccount.id,
-          opening_balance
+          opening
+        ]
+      );
+
+      /* 🔥 OPTIONAL (future step 6 compatible) */
+      await client.query(
+        `
+        INSERT INTO ledger_events
+        (restaurant_id, entity_type, entity_id, event_type, amount, metadata)
+        VALUES ($1,'bank',$2,'bank_credit',$3,$4)
+        `,
+        [
+          req.restaurantId,
+          bankAccount.id,
+          opening,
+          JSON.stringify({ source: "opening_balance" })
         ]
       );
     }
@@ -245,9 +410,72 @@ router.post("/bank-account", authenticate, async (req, res) => {
 
   } catch (err) {
     await client.query("ROLLBACK");
-    res.status(400).json({ message: err.message });
+
+    req.log.error({ err }, "POST /bank-account error");
+
+    res.status(400).json({
+      message: err.message || "Failed to create bank account"
+    });
+
   } finally {
     client.release();
+  }
+});
+
+router.get("/payment-qr", authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT currency_code, upi_id, payid, payid_name
+      FROM restaurant_settings
+      WHERE restaurant_id = $1
+      LIMIT 1
+      `,
+      [req.restaurantId]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ message: "Settings not found" });
+    }
+
+    const settings = result.rows[0];
+
+    let qrData = "";
+
+    /* INR */
+    if (settings.currency_code === "INR") {
+      if (!settings.upi_id) {
+        return res.status(400).json({ message: "UPI not set" });
+      }
+
+      qrData = `upi://pay?pa=${settings.upi_id}&pn=KangPOS`;
+    }
+
+    /* AUD */
+    else {
+      if (!settings.payid) {
+        return res.status(400).json({ message: "PayID not set" });
+      }
+
+      qrData = JSON.stringify({
+        payid: settings.payid,
+        name: settings.payid_name || "Business"
+      });
+    }
+
+    const qr = await QRCode.toDataURL(qrData);
+
+    res.json({
+      qr,
+      type: settings.currency_code === "INR" ? "UPI" : "PAYID",
+      value: settings.currency_code === "INR"
+        ? settings.upi_id
+        : settings.payid
+    });
+
+  } catch (err) {
+    req.log.error({ err }, "QR error");
+    res.status(500).json({ message: "QR generation failed" });
   }
 });
 

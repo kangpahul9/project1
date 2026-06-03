@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import logger from "./logger.js";
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -8,31 +9,33 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-export async function sendDiscrepancyEmail({
-  userName,
-  difference,
-  countedCash,
-  expectedCash,
-  reason,
-}) {
-  const subject = "⚠ Cash Discrepancy Detected - KangPOS";
+export async function sendDiscrepancyEmail(data) {
+  try {
+    const {
+      userName,
+      difference,
+      countedCash,
+      expectedCash,
+      reason,
+    } = data;
 
-  const html = `
-    <h2>Cash Discrepancy Alert</h2>
-    <p><strong>Closed By:</strong> ${userName}</p>
-    <p><strong>Counted Cash:</strong> ₹${countedCash}</p>
-    <p><strong>Expected Cash:</strong> ₹${expectedCash}</p>
-    <p><strong>Difference:</strong> ₹${difference}</p>
-    <p><strong>Reason Provided:</strong> ${reason}</p>
-    <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
-    <hr/>
-    <p>This is an automated financial alert from KangPOS.</p>
-  `;
+    const html = `
+      <h2>Cash Discrepancy Alert</h2>
+      <p><strong>Closed By:</strong> ${userName}</p>
+      <p><strong>Counted Cash:</strong> ${countedCash}</p>
+      <p><strong>Expected Cash:</strong> ${expectedCash}</p>
+      <p><strong>Difference:</strong> ${difference}</p>
+      <p><strong>Reason:</strong> ${reason}</p>
+      <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+    `;
 
-  await transporter.sendMail({
-    from: `"KangPOS Alert" <${process.env.SYSTEM_EMAIL}>`,
-    to: process.env.OWNER_ALERT_EMAIL,
-    subject,
-    html,
-  });
+    await transporter.sendMail({
+      from: `"KangPOS Alert" <${process.env.SYSTEM_EMAIL}>`,
+      to: process.env.OWNER_ALERT_EMAIL,
+      subject: "⚠ Cash Discrepancy Detected",
+      html,
+    });
+  } catch (err) {
+    logger.error({ err }, "Email send failed");
+  }
 }

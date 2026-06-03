@@ -2,438 +2,266 @@ import express from "express";
 import pool from "../config/db.js";
 import { authenticate, requireAdmin } from "../middleware/authMiddleware.js";
 import { sendDiscrepancyEmail } from "../utils/email.js";
-import { sendWhatsAppTemplate } from "../services/whatsappService.js";
+import {
+  validateDenominations
+} from "../utils/denominationUtils.js";
+import { logEvent } from "../utils/ledger.js";
+import {
+  closeBusinessDay,
+  getDaySummary
+} from "../services/businessDayService.js";
 
 const router = express.Router();
 
 /* ===============================
-   GET CURRENT OPEN BUSINESS DAY
+   GET CURRENT BUSINESS DAY
 ================================ */
-router.get("/current", authenticate, async (req, res) => {
+router.get("/current", authenticate, async (req, res, next) => {
   try {
     const result = await pool.query(
-      `
-      SELECT *
-      FROM business_days
-      WHERE restaurant_id = $1
-      AND is_closed = false
-      ORDER BY id DESC
-      LIMIT 1
-      `,
+      `SELECT * FROM business_days
+       WHERE restaurant_id=$1 AND is_closed=false
+       ORDER BY id DESC LIMIT 1`,
       [req.restaurantId]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(204).send(); // No active day
+    if (!result.rows.length) {
+      return res.status(204).send();
     }
 
     res.json(result.rows[0]);
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    next(err);
   }
 });
 
 /* ===============================
-   GET EXPECTED CASH (LEDGER)
+   EXPECTED CASH
 ================================ */
-router.get("/expected-cash", authenticate, async (req, res) => {
+router.get("/expected-cash", authenticate, async (req, res, next) => {
   try {
-    const dayResult = await pool.query(
-      `
-  SELECT id
-  FROM business_days
-  WHERE restaurant_id = $1
-  AND is_closed = false
-  ORDER BY id DESC
-  LIMIT 1
-  `,
-  [req.restaurantId]
+    const day = await pool.query(
+      `SELECT id FROM business_days
+       WHERE restaurant_id=$1 AND is_closed=false
+       ORDER BY id DESC LIMIT 1`,
+      [req.restaurantId]
     );
 
-    if (dayResult.rows.length === 0) {
-      return res.status(404).json({ message: "No open business day" });
+    if (!day.rows.length) {
+      return res.status(404).json({
+        message: "No open business day"
+      });
     }
 
-    const businessDayId = dayResult.rows[0].id;
+    const businessDayId = day.rows[0].id;
 
-    const ledgerResult = await pool.query(
-      `
-      SELECT COALESCE(SUM(amount),0) AS total
-      FROM cash_ledger
-      WHERE restaurant_id = $1 AND business_day_id = $2
-      `,
-      [req.restaurantId, businessDayId]
-    );
+    const ledger = await pool.query(`
+  SELECT COALESCE(SUM(amount),0) AS total
+  FROM ledger_events
+  WHERE restaurant_id=$1 
+  AND business_day_id=$2
+  AND entity_type='cash'
+`, [req.restaurantId, businessDayId]);
 
     res.json({
       businessDayId,
-      expectedCash: Number(ledgerResult.rows[0].total)
+      expectedCash: Number(ledger.rows[0].total),
     });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    next(err);
   }
 });
 
 /* ===============================
-   OPEN BUSINESS DAY
+   OPEN DAY
 ================================ */
-router.post("/start", authenticate, async (req, res) => {
+router.post("/start", authenticate, requireAdmin, async (req, res, next) => {
   const client = await pool.connect();
 
   try {
-    const { denominations } = req.body;
+    let { denominations } = req.body;
 
-    if (!denominations || !Array.isArray(denominations)) {
-      return res.status(400).json({ message: "Invalid denominations format" });
+    if (!Array.isArray(denominations)) {
+      throw new Error("Invalid denominations format");
     }
 
     await client.query("BEGIN");
 
-    // 1️⃣ Check no open day exists
+    // 🔒 prevent race condition
     const existing = await client.query(
-      "SELECT id FROM business_days WHERE restaurant_id = $1 AND is_closed = false LIMIT 1",
+      `SELECT id FROM business_days
+       WHERE restaurant_id=$1 AND is_closed=false
+       FOR UPDATE`,
       [req.restaurantId]
     );
 
-    if (existing.rows.length > 0) {
+    if (existing.rows.length) {
       throw new Error("Business day already open");
     }
 
-    // 2️⃣ Calculate opening cash from denominations
-    let openingCash = 0;
+    // 🔒 validate + compute
+    const toCents = (val) => Math.round(Number(val) * 100);
 
-    for (const d of denominations) {
-      const note = Number(d.note);
-      const qty = Number(d.qty);
+// 🔒 validate + compute (CENTS SAFE)
+let openingCashCents = 0;
+const normalized = {};
 
-      if (!note || qty <= 0) continue;
+for (const d of denominations) {
+  const note = Number(d.note);
+  const qty = Number(d.qty);
 
-      openingCash += note * qty;
-    }
+  if (!note || isNaN(qty) || qty < 0) {
+    throw new Error("Invalid denomination values");
+  }
 
-    // 3️⃣ Create new business day with opening cash
-    const dayResult = await client.query(
-      `
-      INSERT INTO business_days (restaurant_id, date, is_closed, opening_cash)
-VALUES ($1, CURRENT_DATE, false, $2)
-      RETURNING *
-      `,
-      [req.restaurantId, openingCash]
-    );
+  normalized[note] = (normalized[note] || 0) + qty;
 
+  openingCashCents += toCents(note) * qty;
+}
 
-    const businessDay = dayResult.rows[0];
+const openingCash = openingCashCents / 100;
 
-    // 4️⃣ Insert denominations
-    for (const d of denominations) {
-      const note = Number(d.note);
-      const qty = Number(d.qty);
-
-      if (!note || qty <= 0) continue;
-
-      await client.query(
-        `
-        INSERT INTO denominations (restaurant_id, business_day_id, note_value, quantity)
-        VALUES ($1, $2, $3, $4)
-        `,
-        [req.restaurantId, businessDay.id, note, qty]
-      );
-    }
-
-    // 5️⃣ Insert opening entry into ledger
-    await client.query(
-      `
-      INSERT INTO cash_ledger (restaurant_id, business_day_id, type, amount)
-      VALUES ($1, $2, 'opening', $3)
-      `,
-      [req.restaurantId, businessDay.id, openingCash]
-    );
-
-    const userRes = await client.query(
-  "SELECT name FROM users WHERE restaurant_id=$1 AND id = $2",
-  [req.restaurantId, req.user.id]
+// 🔒 validate using decimal (your util expects decimal)
+validateDenominations(
+  normalized,
+  openingCash,
+  req.settings.currency.code
 );
+
+    // 🔥 create business day
+    const day = await client.query(
+      `INSERT INTO business_days
+       (restaurant_id, date, is_closed, opening_cash, opened_by)
+       VALUES ($1, CURRENT_DATE, false, $2, $3)
+       RETURNING *`,
+      [req.restaurantId, openingCash, req.userId]
+    );
+
+    const businessDay = day.rows[0];
+
+    // 🔥 insert denominations
+    for (const [note, qty] of Object.entries(normalized)) {
+      if (qty > 0) {
+        await client.query(
+          `INSERT INTO denominations
+           (restaurant_id, business_day_id, note_value, quantity)
+           VALUES ($1,$2,$3,$4)`,
+          [req.restaurantId, businessDay.id, note, qty]
+        );
+      }
+    }
+
+    // 🔥 ledger entry
+    await logEvent(client, {
+  restaurantId: req.restaurantId,
+  businessDayId: businessDay.id,
+  entityType: "cash",
+  entityId: businessDay.id,
+  eventType: "opening",
+  amount: openingCash,
+  metadata: { source: "business_day_start" },
+  userId: req.userId
+});
+
+    // 🔥 get user name
+    const userRes = await client.query(
+      `SELECT name FROM users WHERE id=$1 AND restaurant_id=$2`,
+      [req.userId, req.restaurantId]
+    );
+
+    const staffName = userRes.rows[0]?.name || "Unknown";
+
     await client.query("COMMIT");
 
-    
-
-const staffName = userRes.rows[0]?.name || "Unknown";
-    // await 
-    sendWhatsAppTemplate(
-  "kangpos_day_opened",
-  [
-    new Date().toLocaleDateString(),
-    staffName,
-    new Date().toLocaleTimeString(),
-    openingCash
-  ]
-).catch(err => console.error("WhatsApp failed:", err));
+    req.log?.info(
+      { restaurantId: req.restaurantId },
+      "Business day started"
+    );
 
     res.status(201).json(businessDay);
 
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error(err);
-    res.status(400).json({ message: err.message });
+    next(err);
   } finally {
     client.release();
   }
 });
 
-
 /* ===============================
-   CLOSE BUSINESS DAY
+   CLOSE DAY
 ================================ */
-router.post("/close", authenticate, async (req, res) => {
+router.post("/close", authenticate, requireAdmin, async (req, res, next) => {
   const client = await pool.connect();
 
-  let emailPayload = null; // ← store email data here
-
   try {
-    const { breakdown, total, reason } = req.body;
+    let { breakdown, total, reason } = req.body;
 
-    if (!breakdown || typeof total !== "number") {
-      return res.status(400).json({
-        message: "Invalid closing data",
-      });
+const totalCents = Math.round(Number(total) * 100);
+const totalNum = totalCents / 100;
+
+    if (!Array.isArray(breakdown) || isNaN(totalNum)) {
+      throw new Error("Invalid closing data");
     }
 
     await client.query("BEGIN");
 
-    // 1️⃣ Get current open business day
-    const dayResult = await client.query(
-      "SELECT * FROM business_days WHERE restaurant_id = $1 AND is_closed = false ORDER BY id DESC LIMIT 1",
-      [req.restaurantId]
+    const result = await closeBusinessDay({
+      client,
+      restaurantId: req.restaurantId,
+      userId: req.userId,
+      breakdown,
+      total: totalNum,
+      reason,
+      currency: req.settings.currency.code
+    });
+
+    const summary = await getDaySummary(
+      client,
+      req.restaurantId,
+      result.businessDayId
     );
 
-    if (dayResult.rows.length === 0) {
-      throw new Error("No open business day");
-    }
-
-    const businessDay = dayResult.rows[0];
-
-    /* ===============================
-       CHECK DRAWER (DENOMINATIONS)
-    =============================== */
-
-    /* ===============================
-   STRICT DENOMINATION CHECK
-================================ */
-
-const systemDenomsRes = await client.query(
-  `
-  SELECT note_value, quantity
-  FROM denominations
-  WHERE restaurant_id = $1 AND business_day_id = $2
-  `,
-  [req.restaurantId, businessDay.id]
-);
-
-// Convert DB denominations into map
-const systemMap = {};
-systemDenomsRes.rows.forEach(row => {
-  systemMap[row.note_value] = Number(row.quantity);
-});
-
-// Convert submitted breakdown into map
-const countedMap = {};
-breakdown.forEach(d => {
-  countedMap[Number(d.note)] = Number(d.qty);
-});
-
-// Check exact match
-for (const note in systemMap) {
-  const systemQty = systemMap[note] || 0;
-  const countedQty = countedMap[note] || 0;
-
-  if (systemQty !== countedQty) {
-    throw new Error(
-      `Denomination mismatch for ₹${note}. System: ${systemQty}, Counted: ${countedQty}`
-    );
-  }
-}
-
-// Also verify no extra notes were submitted
-for (const note in countedMap) {
-  if (!(note in systemMap) && countedMap[note] > 0) {
-    throw new Error(`Unexpected denomination ₹${note} detected`);
-  }
-}
-
-// Calculate total from DB for safety
-const systemCash = Object.entries(systemMap).reduce(
-  (sum, [note, qty]) => sum + Number(note) * qty,
-  0
-);
-
-    /* ===============================
-       CHECK LEDGER EXPECTED CASH
-    =============================== */
-
-    const ledgerResult = await client.query(
-      `
-      SELECT COALESCE(SUM(amount),0) AS total
-      FROM cash_ledger
-      WHERE restaurant_id = $1 AND business_day_id = $2
-      `,
-      [req.restaurantId, businessDay.id]
-    );
-
-    const expectedCash = Number(ledgerResult.rows[0].total);
-    const difference = total - expectedCash;
-
-    let hasDiscrepancy = false;
-    let closingReason = reason || null;
-
-    /* ===============================
-       HANDLE DISCREPANCY
-    =============================== */
-
-    if (Math.abs(difference) > 0.01) {
-
-      if (!closingReason || closingReason.trim() === "") {
-        throw new Error("Ledger mismatch detected. Closing reason required.");
-      }
-
-      hasDiscrepancy = true;
-
-      // Insert adjustment in ledger
-      await client.query(
-        `
-        INSERT INTO cash_ledger
-        (restaurant_id, business_day_id, type, amount)
-        VALUES ($1, $2, 'closing_adjustment', $3)
-        `,
-        [req.restaurantId, businessDay.id, difference]
-      );
-
-      // Get closing user name for email
-      const userRes = await client.query(
-        "SELECT name FROM users WHERE restaurant_id = $1 AND id = $2",
-        [req.restaurantId, req.user.id]
-      );
-
-      emailPayload = {
-        userName: userRes.rows[0]?.name || "Unknown User",
-        difference,
-        countedCash: total,
-        expectedCash,
-        reason: closingReason,
-      };
-    }
-
-    /* ===============================
-       CLOSE BUSINESS DAY
-    =============================== */
-
-    await client.query(
-      `
-      UPDATE business_days
-      SET is_closed = true,
-          closing_cash = $1,
-          closed_by = $2,
-          closing_difference = $3,
-          closing_reason = $4,
-          has_discrepancy = $5
-      WHERE id = $6 AND restaurant_id = $7
-      `,
-      [
-        total,
-        req.user.id,
-        difference,
-        closingReason,
-        hasDiscrepancy,
-        businessDay.id,
-        req.restaurantId
-      ]
-    );
-
+    // 🔥 get user name
     const userRes = await client.query(
-  "SELECT name FROM users WHERE restaurant_id = $1 AND id = $2",
-  [req.restaurantId, req.user.id]
-);
+      `SELECT name FROM users WHERE id=$1 AND restaurant_id=$2`,
+      [req.userId, req.restaurantId]
+    );
+
+    const staffName = userRes.rows[0]?.name || "Unknown";
+
     await client.query("COMMIT");
-// CASH SALES
-const cashSalesRes = await client.query(
-  `
-  SELECT COALESCE(SUM(amount),0) AS total
-  FROM cash_ledger
-  WHERE restaurant_id = $1 AND business_day_id = $2
-  AND type = 'sale'
-  `,
-  [req.restaurantId, businessDay.id]
-);
 
-const cashSales = Number(cashSalesRes.rows[0].total);
-
-// UPI SALES
-const upiSalesRes = await client.query(
-  `
-  SELECT COALESCE(SUM(total),0) AS total
-  FROM orders
-  WHERE restaurant_id = $1 AND business_day_id = $2
-  AND payment_method = 'online'
-  `,
-  [req.restaurantId, businessDay.id]
-);
-
-const upiSales = Number(upiSalesRes.rows[0].total);
-
-// EXPENSES
-const expensesRes = await client.query(
-  `
-  SELECT COALESCE(SUM(amount),0) AS total
-  FROM expenses
-  WHERE restaurant_id = $1 AND business_day_id = $2
-  `,
-  [req.restaurantId, businessDay.id]
-);
-
-const expenses = Number(expensesRes.rows[0].total);
-
-const closingCash = total;
-
-const staffName = userRes.rows[0]?.name || "Unknown";
-  //  await 
-   sendWhatsAppTemplate(
-  "kangpos_day_closed",
-  [
-    new Date().toLocaleDateString(),
-    staffName,
-    cashSales,
-    upiSales,
-    expenses,
-    closingCash
-  ]
-).catch(err => console.error("WhatsApp failed:", err));
-
-
-    /* ===============================
-       SEND EMAIL AFTER COMMIT
-    =============================== */
-
-    if (emailPayload) {
-      sendDiscrepancyEmail(emailPayload)
-        .catch(err => console.error("Email failed:", err));
+    if (result.hasDiscrepancy) {
+      sendDiscrepancyEmail({
+        userName: staffName,
+        difference: result.difference,
+        countedCash: totalNum,
+        expectedCash: result.expectedCash,
+        reason
+      }).catch((err) => req.log.error({ err }, "Discrepancy email failed"));
     }
+
+    req.log?.info(
+      { restaurantId: req.restaurantId },
+      "Business day closed"
+    );
 
     res.json({
       message: "Business day closed successfully",
-      countedCash: total,
-      drawerCash: systemCash,
-      expectedCash,
-      difference,
+      expectedCash: result.expectedCash,
+      difference: result.difference,
+      ...summary
     });
 
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error(err);
-    res.status(400).json({ message: err.message });
+    next(err);
   } finally {
     client.release();
   }
 });
+
 export default router;

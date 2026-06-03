@@ -1,50 +1,73 @@
 import express from "express";
 import Stripe from "stripe";
 import pool from "../config/db.js";
+import logger from "../utils/logger.js";
 import { authenticate } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+/* =========================
+   ENV VALIDATION
+========================= */
+if (!process.env.STRIPE_SECRET_KEY) {
+  throw new Error("STRIPE_SECRET_KEY not set");
+}
+if (!process.env.STRIPE_WEBHOOK_SECRET) {
+  throw new Error("STRIPE_WEBHOOK_SECRET not set");
+}
+if (!process.env.STRIPE_PRICE_ID) {
+  throw new Error("STRIPE_PRICE_ID not set");
+}
+if (!process.env.CLIENT_URL) {
+  throw new Error("CLIENT_URL not set");
+}
 
-// 🔥 ENV BASE URL (VERY IMPORTANT)
-const CLIENT_URL = process.env.CLIENT_URL; 
-// e.g. https://kangpos.com
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const CLIENT_URL = process.env.CLIENT_URL;
 
 /* ========================================
    CREATE CHECKOUT SESSION
 ======================================== */
-router.post("/create-checkout", authenticate, async (req, res) => {
+router.post("/create-checkout", authenticate, async (req, res, next) => {
   try {
-    const email = req.user.email; // 🔥 NEVER trust frontend
     const restaurantId = req.restaurantId;
 
-   const session = await stripe.checkout.sessions.create({
-  mode: "subscription",
+    const userRes = await pool.query(
+      `SELECT email FROM users WHERE id=$1`,
+      [req.userId]
+    );
 
-  payment_method_types: ["card"],
+    const email = userRes.rows[0]?.email;
 
-  customer_email: email,
+    if (!email) {
+      throw new Error("User email not found");
+    }
 
-  line_items: [
-    {
-      price: process.env.STRIPE_PRICE_ID,
-      quantity: 1,
-    },
-  ],
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      payment_method_types: ["card"],
+      customer_email: email,
 
-  success_url: `${CLIENT_URL}/settings?billing=success`,
-  cancel_url: `${CLIENT_URL}/settings?billing=cancel`,
+      line_items: [
+        {
+          price: process.env.STRIPE_PRICE_ID,
+          quantity: 1,
+        },
+      ],
 
-  metadata: {
-    restaurantId: String(restaurantId),
-  },
-});
+      success_url: `${CLIENT_URL}/settings?billing=success`,
+      cancel_url: `${CLIENT_URL}/settings?billing=cancel`,
+
+      metadata: {
+        restaurantId: String(restaurantId),
+      },
+    });
+
     res.json({ url: session.url });
 
   } catch (err) {
-    console.error("Stripe checkout error:", err);
-    res.status(500).json({ error: "Stripe error" });
+    req.log?.error(err, "Stripe checkout error");
+    next(err);
   }
 });
 
@@ -56,7 +79,6 @@ router.post(
   express.raw({ type: "application/json" }),
   async (req, res) => {
     const sig = req.headers["stripe-signature"];
-
     let event;
 
     try {
@@ -66,121 +88,132 @@ router.post(
         process.env.STRIPE_WEBHOOK_SECRET
       );
     } catch (err) {
-      console.error("Webhook verification failed:", err.message);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
+      logger.error({ err }, "Webhook verification failed");
+      return res.status(400).send(`Webhook Error`);
     }
 
     try {
-      /* ==============================
-         SUBSCRIPTION STARTED
-      ============================== */
-      if (event.type === "checkout.session.completed") {
-  const session = event.data.object;
+      switch (event.type) {
+        case "checkout.session.completed": {
+          const session = event.data.object;
 
-  // Only handle subscriptions
-  if (session.mode !== "subscription") {
-    return res.json({ received: true });
-  }
+          if (session.mode !== "subscription") break;
 
-  const restaurantId = session.metadata?.restaurantId;
-  const customerId = session.customer;
-  const subscriptionId = session.subscription;
+          const restaurantId = session.metadata?.restaurantId;
+          const customerId = session.customer;
+          const subscriptionId = session.subscription;
 
-  if (!restaurantId) throw new Error("Missing metadata");
+          if (!restaurantId) break;
 
-  let validTill = null;
+          let validTill = null;
 
-  // 🔥 Get subscription expiry
-  if (subscriptionId) {
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+          if (subscriptionId) {
+            const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+            validTill = new Date(subscription.current_period_end * 1000);
+          }
 
-    validTill = new Date(subscription.current_period_end * 1000);
-  }
+          await pool.query(
+            `
+            UPDATE restaurants
+            SET 
+              subscription_status = 'active',
+              stripe_customer_id = $1,
+              stripe_subscription_id = $2,
+              subscription_valid_till = $3
+            WHERE id = $4
+            `,
+            [customerId, subscriptionId, validTill, restaurantId]
+          );
 
-  // 🔥 Save everything
-  const result = await pool.query(
-    `
-    UPDATE restaurants
-    SET 
-      subscription_status = 'active',
-      stripe_customer_id = $1,
-      stripe_subscription_id = $2,
-      subscription_valid_till = $3
-    WHERE id = $4
-    `,
-    [customerId, subscriptionId, validTill, restaurantId]
-  );
+          break;
+        }
 
-  if (result.rowCount === 0) {
-    console.error("❌ No restaurant found:", restaurantId);
-  }
+        case "invoice.payment_succeeded": {
+          const invoice = event.data.object;
+          const subscriptionId = invoice.subscription;
 
-  console.log(
-    "✅ Subscription activated:",
-    restaurantId,
-    "Valid till:",
-    validTill
-  );
-}
+          if (!subscriptionId) break;
 
-      /* ==============================
-         SUBSCRIPTION CANCELLED
-      ============================== */
-      if (event.type === "customer.subscription.deleted") {
-        const subscription = event.data.object;
+          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
-        const customerId = subscription.customer;
+          const validTill = new Date(subscription.current_period_end * 1000);
 
-        await pool.query(
-          `
-          UPDATE restaurants
-          SET subscription_status = 'inactive'
-          WHERE stripe_customer_id = $1
-          `,
-          [customerId]
-        );
+          await pool.query(
+            `
+            UPDATE restaurants
+            SET 
+              subscription_status = 'active',
+              subscription_valid_till = $1
+            WHERE stripe_subscription_id = $2
+            `,
+            [validTill, subscriptionId]
+          );
 
-        console.log("❌ Subscription cancelled:", customerId);
-      }
+          break;
+        }
 
-      /* ==============================
-         PAYMENT FAILED (OPTIONAL)
-      ============================== */
-      if (event.type === "invoice.payment_failed") {
-        const invoice = event.data.object;
+        case "invoice.payment_failed": {
+          const invoice = event.data.object;
 
-        await pool.query(
-          `
-          UPDATE restaurants
-          SET subscription_status = 'past_due'
-          WHERE stripe_customer_id = $1
-          `,
-          [invoice.customer]
-        );
+          await pool.query(
+            `
+            UPDATE restaurants
+            SET subscription_status = 'past_due'
+            WHERE stripe_customer_id = $1
+            `,
+            [invoice.customer]
+          );
 
-        console.log("⚠️ Payment failed:", invoice.customer);
+          break;
+        }
+
+        case "customer.subscription.deleted": {
+          const subscription = event.data.object;
+
+          await pool.query(
+            `
+            UPDATE restaurants
+            SET subscription_status = 'inactive'
+            WHERE stripe_subscription_id = $1
+            `,
+            [subscription.id]
+          );
+
+          break;
+        }
+
+        default:
+          break;
       }
 
       res.json({ received: true });
 
     } catch (err) {
-      console.error("Webhook handler error:", err);
+      logger.error({ err }, "Webhook handler error");
       res.status(500).json({ error: "Webhook processing failed" });
     }
   }
 );
 
-router.get("/subscription", authenticate, async (req, res) => {
-  const result = await pool.query(
-    `
-    SELECT subscription_status, subscription_valid_till
-    FROM restaurants
-    WHERE id = $1
-    `,
-    [req.restaurantId]
-  );
+/* ========================================
+   GET SUBSCRIPTION
+======================================== */
+router.get("/subscription", authenticate, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT subscription_status, subscription_valid_till
+      FROM restaurants
+      WHERE id = $1
+      `,
+      [req.restaurantId]
+    );
 
-  res.json(result.rows[0]);
+    res.json(result.rows[0] || null);
+
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

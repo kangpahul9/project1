@@ -1,26 +1,22 @@
-import {
-  useWithdrawalHistory,
-  useDepositHistory,
-} from "@/hooks/use-withdraw";
+import { useWithdrawalHistory, useDepositHistory } from "@/hooks/use-withdraw";
 import { Sidebar } from "@/components/Sidebar";
-import { Loader2 } from "lucide-react";
+import { Loader2, ArrowDownLeft, ArrowUpRight, Download, TrendingDown } from "lucide-react";
 import { useState, useMemo } from "react";
+import { useCurrency } from "@/hooks/use-currency";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Cell,
 } from "recharts";
-import { useSettings } from "@/hooks/use-settings";
+import { cn } from "@/lib/utils";
+import { format as formatDate } from "date-fns";
 
 export default function WithdrawalHistory() {
+  const { format } = useCurrency();
   const [range, setRange] = useState<"weekly" | "monthly" | "custom">("weekly");
   const [mode, setMode] = useState<"withdrawal" | "deposit">("withdrawal");
-
-  const { data: settings } = useSettings();
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   const today = new Date();
 
@@ -28,236 +24,249 @@ export default function WithdrawalHistory() {
     if (range === "weekly") {
       const weekAgo = new Date();
       weekAgo.setDate(today.getDate() - 7);
-      return {
-        from: weekAgo.toISOString().split("T")[0],
-        to: today.toISOString().split("T")[0],
-      };
+      return { from: weekAgo.toISOString().split("T")[0], to: today.toISOString().split("T")[0] };
     }
-
     if (range === "monthly") {
       const monthAgo = new Date();
       monthAgo.setMonth(today.getMonth() - 1);
-      return {
-        from: monthAgo.toISOString().split("T")[0],
-        to: today.toISOString().split("T")[0],
-      };
+      return { from: monthAgo.toISOString().split("T")[0], to: today.toISOString().split("T")[0] };
     }
-
+    if (customFrom && customTo) return { from: customFrom, to: customTo };
     return {};
-  }, [range]);
+  }, [range, customFrom, customTo]);
 
-  const { data: withdrawalData, isLoading: loadingWithdrawals } =
-    useWithdrawalHistory(computedFilters);
-
-  const { data: depositData, isLoading: loadingDeposits } =
-    useDepositHistory(computedFilters);
+  const { data: withdrawalData, isLoading: loadingWithdrawals } = useWithdrawalHistory(computedFilters);
+  const { data: depositData, isLoading: loadingDeposits } = useDepositHistory(computedFilters);
 
   const data = mode === "withdrawal" ? withdrawalData : depositData;
-  const isLoading =
-    mode === "withdrawal" ? loadingWithdrawals : loadingDeposits;
+  const isLoading = mode === "withdrawal" ? loadingWithdrawals : loadingDeposits;
 
-  const totalAmount = useMemo(() => {
-    return (
-      data?.reduce((sum: number, w: any) => sum + Number(w.amount), 0) || 0
-    );
-  }, [data]);
-const totalWithdrawals = useMemo(() => {
-  return (
-    withdrawalData?.reduce(
-      (sum: number, w: any) => sum + Number(w.amount),
-      0
-    ) || 0
-  );
-}, [withdrawalData]);
-
-const totalDeposits = useMemo(() => {
-  return (
-    depositData?.reduce(
-      (sum: number, d: any) => sum + Number(d.amount),
-      0
-    ) || 0
-  );
-}, [depositData]);
-
-const netImpact = totalDeposits - totalWithdrawals;
-
-  const totalTransactions = data?.length || 0;
+  const totalWithdrawals = useMemo(() =>
+    withdrawalData?.reduce((s: number, w: any) => s + Number(w.amount), 0) || 0,
+    [withdrawalData]);
+  const totalDeposits = useMemo(() =>
+    depositData?.reduce((s: number, d: any) => s + Number(d.amount), 0) || 0,
+    [depositData]);
+  const netImpact = totalDeposits - totalWithdrawals;
 
   const reasonBreakdown = useMemo(() => {
     const map: Record<string, number> = {};
-    data?.forEach((w: any) => {
-      map[w.reason] = (map[w.reason] || 0) + Number(w.amount);
-    });
-
-    return Object.entries(map).map(([reason, amount]) => ({
-      reason,
-      amount,
-    }));
+    data?.forEach((w: any) => { map[w.reason] = (map[w.reason] || 0) + Number(w.amount); });
+    return Object.entries(map).map(([reason, amount]) => ({ reason, amount }));
   }, [data]);
 
   const exportCSV = () => {
     if (!data) return;
-
     const headers = ["Date", "Amount", "Reason", "Owner"];
     const rows = data.map((w: any) => [
-      new Date(w.created_at).toLocaleString(),
-      w.amount,
-      w.reason,
-      w.owner_name || "-"
+      new Date(w.created_at).toLocaleString(), w.amount, w.reason, w.owner_name || "-"
     ]);
-
-    const csv =
-      "data:text/csv;charset=utf-8," +
-      [headers, ...rows].map((e) => e.join(",")).join("\n");
-
+    const csv = "data:text/csv;charset=utf-8," + [headers, ...rows].map(e => e.join(",")).join("\n");
     const link = document.createElement("a");
     link.href = encodeURI(csv);
-    link.download =
-      mode === "withdrawal" ? "withdrawals.csv" : "deposits.csv";
+    link.download = mode === "withdrawal" ? "withdrawals.csv" : "deposits.csv";
     link.click();
   };
 
+  const isWithdrawal = mode === "withdrawal";
+
   return (
-    <div className="flex bg-gray-50 min-h-screen overflow-hidden">
+    <div className="flex bg-background min-h-screen">
       <Sidebar />
-<main className="flex-1 ml-0 lg:ml-64 p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8 overflow-y-auto">
-         <div className="flex items-center justify-between mb-6">
-  <div>
-    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-      {mode === "withdrawal"
-            ? "Withdrawal Analytics"
-            : "Deposit Analytics"}
-    </h1>
-    <p className="text-sm text-gray-500">
-      Track cash flow, withdrawals & deposits
-    </p>
-  </div>
-</div>
+      <main className="flex-1 ml-0 lg:ml-60 px-4 sm:px-6 lg:px-8 py-6 pt-16 lg:pt-8 overflow-y-auto">
+        <div className="w-full">
 
-        {/* TOGGLE */}
-        <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-xl w-fit mb-6">
+        {/* ── Header ── */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold text-foreground flex items-center gap-2.5">
+              <TrendingDown className="w-6 h-6 text-primary shrink-0" />
+              Cash Flow Analytics
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Track withdrawals &amp; deposits over time
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={exportCSV} className="gap-1.5 shrink-0">
+            <Download className="w-4 h-4" /> Export CSV
+          </Button>
+        </div>
 
-  <button
-    onClick={() => setMode("withdrawal")}
-    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-      mode === "withdrawal"
-        ? "bg-white shadow text-red-600"
-        : "text-gray-600"
-    }`}
-  >
-    Withdrawals
-  </button>
+        {/* ── Controls ── */}
+        <div className="flex flex-wrap gap-3 mb-6">
+          {/* Mode toggle */}
+          <div className="flex items-center gap-1 bg-muted p-1 rounded-xl">
+            <button
+              onClick={() => setMode("withdrawal")}
+              className={cn(
+                "px-4 py-1.5 rounded-lg text-sm font-medium transition",
+                mode === "withdrawal"
+                  ? "bg-card shadow text-red-600 dark:text-red-400"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <ArrowUpRight className="w-3.5 h-3.5 inline mr-1.5" />Withdrawals
+            </button>
+            <button
+              onClick={() => setMode("deposit")}
+              className={cn(
+                "px-4 py-1.5 rounded-lg text-sm font-medium transition",
+                mode === "deposit"
+                  ? "bg-card shadow text-emerald-600 dark:text-emerald-400"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <ArrowDownLeft className="w-3.5 h-3.5 inline mr-1.5" />Deposits
+            </button>
+          </div>
 
-  <button
-    onClick={() => setMode("deposit")}
-    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-      mode === "deposit"
-        ? "bg-white shadow text-green-600"
-        : "text-gray-600"
-    }`}
-  >
-    Deposits
-  </button>
+          {/* Range toggle */}
+          <div className="flex items-center gap-1 bg-muted p-1 rounded-xl">
+            {(["weekly", "monthly", "custom"] as const).map(r => (
+              <button
+                key={r}
+                onClick={() => setRange(r)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-sm font-medium capitalize transition",
+                  range === r ? "bg-card shadow text-primary" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        </div>
 
-  <button
-    onClick={exportCSV}
-    className="ml-4 bg-black text-white px-3 py-2 rounded-lg text-sm"
-  >
-    Export
-  </button>
+        {/* ── Custom date range ── */}
+        {range === "custom" && (
+          <div className="flex flex-wrap gap-3 mb-6">
+            <Input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="w-44" />
+            <Input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="w-44" />
+          </div>
+        )}
 
-</div>
-
-<div className="mb-4 text-sm text-gray-500">
-  {totalTransactions} transactions in this period
-</div>
-
-        {/* SUMMARY */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-
-  {/* TOTAL WITHDRAWALS */}
-  <div className="bg-white p-5 rounded-2xl shadow-sm border hover:shadow-md transition">
-  <p className="text-xs text-gray-500">Total Withdrawals</p>
-  <p className="text-2xl font-bold text-red-600 mt-1">
-    ₹{totalWithdrawals}
-  </p>
-</div>
-
-  {/* TOTAL DEPOSITS */}
-  <div className="bg-white p-6 rounded-xl shadow">
-    <h3>Total Deposits</h3>
-    <p className="text-2xl font-bold mt-2 text-green-600">
-      ₹{totalDeposits}
-    </p>
-  </div>
-
-  {/* NET IMPACT */}
-  <div className="bg-white p-6 rounded-xl shadow">
-    <h3>Net Impact</h3>
-    <p
-      className={`text-2xl font-bold mt-2 ${
-        netImpact >= 0 ? "text-green-600" : "text-red-600"
-      }`}
-    >
-      ₹{netImpact}
-    </p>
-  </div>
-
-</div>
+        {/* ── Summary cards ── */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div className="bg-card border border-red-200 dark:border-red-800 rounded-2xl p-5 shadow-sm">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Total Withdrawals</p>
+            <p className="text-2xl font-bold text-red-600 dark:text-red-400">{format(totalWithdrawals)}</p>
+          </div>
+          <div className="bg-card border border-emerald-200 dark:border-emerald-800 rounded-2xl p-5 shadow-sm">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Total Deposits</p>
+            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{format(totalDeposits)}</p>
+          </div>
+          <div className={cn(
+            "rounded-2xl p-5 shadow-sm border",
+            netImpact >= 0
+              ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800"
+              : "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800"
+          )}>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Net Impact</p>
+            <p className={cn(
+              "text-2xl font-bold",
+              netImpact >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
+            )}>
+              {format(netImpact)}
+            </p>
+          </div>
+        </div>
 
         {isLoading ? (
-          <Loader2 className="animate-spin" />
+          <div className="flex items-center justify-center h-48">
+            <Loader2 className="animate-spin w-6 h-6 text-muted-foreground" />
+          </div>
         ) : (
           <>
-            <div className="bg-white rounded-2xl shadow-sm border p-5 mb-8 overflow-hidden">
-  <ResponsiveContainer width="100%" height={250}>
-    <BarChart layout="vertical" data={reasonBreakdown}>
-      <CartesianGrid strokeDasharray="2 2" stroke="#eee" />
-      <XAxis type="number" hide />
-      <YAxis 
-        type="category" 
-        dataKey="reason" 
-        width={50}
-        tick={{ fontSize: 12 }}
-      />
-      <Tooltip />
-      <Bar dataKey="amount" radius={[6, 6, 6, 6]} />
-    </BarChart>
-  </ResponsiveContainer>
-</div>
-
-            <div className="bg-white rounded-xl shadow p-6">
-              <div className="overflow-x-auto">
-  <table className="w-full text-left min-w-[600px]">
-                <thead className="border-b">
-                  <tr>
-                    <th className="py-2">Date</th>
-                    <th>Amount</th>
-                    <th>Reason</th>
-                    <th>User</th>
-                  </tr>
-                </thead>
-                <tbody>
-  {data?.map((w: any) => (
-    <tr key={w.id} className="border-b last:border-0">
-      <td className="py-3 text-sm text-gray-600">
-        {new Date(w.created_at).toLocaleString()}
-      </td>
-      <td className="font-semibold">
-        ₹{w.amount}
-      </td>
-      <td className="text-gray-600">{w.reason}</td>
-      <td className="text-gray-500 text-sm">
-        {w.owner_name || "-"}
-      </td>
-    </tr>
-  ))}
-</tbody>
-              </table>
+            {/* ── Bar chart ── */}
+            {reasonBreakdown.length > 0 && (
+              <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5 mb-5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-4">
+                  By Reason
+                </p>
+                <ResponsiveContainer width="100%" height={Math.max(180, reasonBreakdown.length * 36)}>
+                  <BarChart layout="vertical" data={reasonBreakdown} margin={{ left: 8, right: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
+                    <XAxis type="number" hide />
+                    <YAxis
+                      type="category"
+                      dataKey="reason"
+                      width={100}
+                      tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: "12px",
+                        fontSize: "13px",
+                      }}
+                    />
+                    <Bar dataKey="amount" radius={[0, 6, 6, 0]}>
+                      {reasonBreakdown.map((_, i) => (
+                        <Cell
+                          key={i}
+                          fill={isWithdrawal ? "hsl(0 84% 60%)" : "hsl(142 71% 45%)"}
+                          fillOpacity={0.8}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
-            </div>
+            )}
+
+            {/* ── Transactions table ── */}
+            {(!data || data.length === 0) ? (
+              <div className="bg-card border border-border/60 rounded-2xl p-16 text-center shadow-sm">
+                <TrendingDown className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
+                <p className="font-semibold text-foreground">No {mode}s in this period</p>
+              </div>
+            ) : (
+              <div className="bg-card border border-border/60 rounded-2xl shadow-sm overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-border/60 bg-muted/40">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    {data.length} transaction{data.length !== 1 ? "s" : ""}
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[540px]">
+                    <thead>
+                      <tr className="border-b border-border/40 text-xs text-muted-foreground">
+                        <th className="px-5 py-3 text-left font-semibold">Date</th>
+                        <th className="px-5 py-3 text-left font-semibold">Amount</th>
+                        <th className="px-5 py-3 text-left font-semibold">Reason</th>
+                        <th className="px-5 py-3 text-left font-semibold">User</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.map((w: any) => (
+                        <tr key={w.id} className="border-b border-border/40 last:border-0 hover:bg-muted/30 transition-colors">
+                          <td className="px-5 py-3 text-xs text-muted-foreground">
+                            {formatDate(new Date(w.created_at), "MMM d, yyyy · h:mm a")}
+                          </td>
+                          <td className={cn(
+                            "px-5 py-3 font-semibold tabular-nums",
+                            isWithdrawal
+                              ? "text-red-600 dark:text-red-400"
+                              : "text-emerald-600 dark:text-emerald-400"
+                          )}>
+                            {isWithdrawal ? "−" : "+"}{format(w.amount)}
+                          </td>
+                          <td className="px-5 py-3 text-muted-foreground">{w.reason}</td>
+                          <td className="px-5 py-3 text-muted-foreground text-xs">{w.owner_name || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </>
         )}
+
+        </div>
       </main>
     </div>
   );

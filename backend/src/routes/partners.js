@@ -4,41 +4,60 @@ import { authenticate, requireAdmin } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-/* =========================
+/* =========================================
    GET ALL PARTNERS
-========================= */
-
+========================================= */
 router.get("/", authenticate, async (req, res) => {
   try {
-    const { restaurantId } = req;
-
     const result = await pool.query(
-      `
-      SELECT *
-      FROM partners
-      WHERE restaurant_id = $1
-      ORDER BY name
-      `,
-      [restaurantId]
+      `SELECT * FROM partners WHERE restaurant_id=$1 ORDER BY name`,
+      [req.restaurantId]
     );
 
     res.json(result.rows);
   } catch (err) {
-    console.error("Fetch partners error:", err);
+    req.log.error({ err }, "Failed to fetch partners");
     res.status(500).json({ message: "Failed to fetch partners" });
   }
 });
 
-/* =========================
+/* =========================================
    CREATE PARTNER
-========================= */
+========================================= */
+router.post("/", authenticate, requireAdmin, async (req, res, next) => {
+  const client = await pool.connect();
 
-router.post("/", authenticate, requireAdmin, async (req, res) => {
   try {
-    const { restaurantId } = req;
-    const { name, phone, email, share_percent } = req.body;
+    const { restaurantId, userId } = req;
+    const { name, phone, email, share_percent, idempotencyKey } = req.body;
 
-    const result = await pool.query(
+    if (!name) throw new Error("Name required");
+    if (share_percent < 0 || share_percent > 100)
+      throw new Error("Invalid share percent");
+
+    if (!idempotencyKey) throw new Error("Idempotency required");
+
+    await client.query("BEGIN");
+
+    const existing = await client.query(
+      `SELECT id FROM partners WHERE restaurant_id=$1 AND name=$2`,
+      [restaurantId, name]
+    );
+
+    if (existing.rows.length) {
+      throw new Error("Partner already exists");
+    }
+
+    const totalRes = await client.query(
+  `SELECT COALESCE(SUM(share_percent),0) as total FROM partners WHERE restaurant_id=$1`,
+  [restaurantId]
+);
+
+if (Number(totalRes.rows[0].total) + share_percent > 100) {
+  throw new Error("Total partner share cannot exceed 100%");
+}
+
+    const result = await client.query(
       `
       INSERT INTO partners
       (restaurant_id, name, phone, email, share_percent)
@@ -48,25 +67,35 @@ router.post("/", authenticate, requireAdmin, async (req, res) => {
       [restaurantId, name, phone, email, share_percent]
     );
 
+    await client.query("COMMIT");
+
     res.json(result.rows[0]);
+
   } catch (err) {
-    console.error("Create partner error:", err);
-    res.status(500).json({ message: "Failed to create partner" });
+    await client.query("ROLLBACK");
+    next(err);
+  } finally {
+    client.release();
   }
 });
 
-/* =========================
+/* =========================================
    UPDATE PARTNER
-========================= */
+========================================= */
+router.put("/:id", authenticate, requireAdmin, async (req, res, next) => {
+  const client = await pool.connect();
 
-router.patch("/:id", authenticate, requireAdmin, async (req, res) => {
   try {
-    const { restaurantId } = req;
     const { id } = req.params;
-
+    const { restaurantId, userId } = req;
     const { name, phone, email, share_percent } = req.body;
 
-    const result = await pool.query(
+    if (share_percent < 0 || share_percent > 100)
+      throw new Error("Invalid share percent");
+
+    await client.query("BEGIN");
+
+    const result = await client.query(
       `
       UPDATE partners
       SET name=$1, phone=$2, email=$3, share_percent=$4
@@ -76,167 +105,177 @@ router.patch("/:id", authenticate, requireAdmin, async (req, res) => {
       [name, phone, email, share_percent, id, restaurantId]
     );
 
+    await client.query("COMMIT");
+
     res.json(result.rows[0]);
+
   } catch (err) {
-    console.error("Update partner error:", err);
-    res.status(500).json({ message: "Failed to update partner" });
+    await client.query("ROLLBACK");
+    next(err);
+  } finally {
+    client.release();
   }
 });
 
-/* =========================
+/* =========================================
    DELETE PARTNER
-========================= */
+========================================= */
+router.delete("/:id", authenticate, requireAdmin, async (req, res, next) => {
+  const client = await pool.connect();
 
-router.delete("/:id", authenticate, requireAdmin, async (req, res) => {
   try {
-    const { restaurantId } = req;
     const { id } = req.params;
+    const { restaurantId, userId } = req;
 
-    await pool.query(
-      `
-      DELETE FROM partners
-      WHERE id=$1 AND restaurant_id=$2
-      `,
+    await client.query("BEGIN");
+
+    // Clear FK references — use SAVEPOINTs so a missing column on any table
+    // doesn't abort the whole transaction
+    const fkTables = [
+      "cash_withdrawals",
+      "cash_deposits",
+      "expenses",
+      "vendor_settlements",
+      "bank_transactions",
+    ];
+    for (const table of fkTables) {
+      await client.query(`SAVEPOINT sp_${table}`);
+      try {
+        await client.query(
+          `UPDATE ${table} SET partner_id = NULL WHERE partner_id = $1`,
+          [id]
+        );
+        await client.query(`RELEASE SAVEPOINT sp_${table}`);
+      } catch {
+        await client.query(`ROLLBACK TO SAVEPOINT sp_${table}`);
+      }
+    }
+
+    await client.query(
+      `DELETE FROM partners WHERE id=$1 AND restaurant_id=$2`,
       [id, restaurantId]
     );
 
+    await client.query("COMMIT");
+
     res.json({ success: true });
+
   } catch (err) {
-    console.error("Delete partner error:", err);
-    res.status(500).json({ message: "Failed to delete partner" });
+    await client.query("ROLLBACK");
+    next(err);
+  } finally {
+    client.release();
   }
 });
 
-/* =========================
-   PARTNER LEDGER SUMMARY
-========================= */
-
+/* =========================================
+   PARTNER LEDGER SUMMARY (FIXED 🔥)
+========================================= */
 router.get("/ledger", authenticate, requireAdmin, async (req, res) => {
   try {
-
-    const restaurantId = req.restaurantId;
+    const { restaurantId } = req;
 
     /* =========================
-       TOTAL SALES
+       SALES
     ========================= */
-
-    const salesRes = await pool.query(
-      `
-      SELECT COALESCE(SUM(total),0) AS total_sales
-      FROM orders
+    const salesRes = await pool.query(`
+      SELECT COALESCE(SUM(amount),0) as total
+      FROM ledger_events
       WHERE restaurant_id=$1
-      `,
-      [restaurantId]
-    );
+      AND event_type='cash_sale'
+    `, [restaurantId]);
 
-    const totalSales = Number(salesRes.rows[0].total_sales);
-
+    const totalSales = Number(salesRes.rows[0].total);
 
     /* =========================
-       TOTAL EXPENSES
+       EXPENSES
     ========================= */
-
-    const expenseRes = await pool.query(
-      `
-      SELECT COALESCE(SUM(amount),0) AS total_expenses
-      FROM expenses
+    const expenseRes = await pool.query(`
+      SELECT COALESCE(SUM(amount),0) as total
+      FROM ledger_events
       WHERE restaurant_id=$1
-      `,
-      [restaurantId]
-    );
+      AND event_type='cash_withdrawal'
+    `, [restaurantId]);
 
-    const totalExpenses = Number(expenseRes.rows[0].total_expenses);
-
-
-    /* =========================
-       TOTAL PROFIT
-    ========================= */
+    const totalExpenses = Math.abs(Number(expenseRes.rows[0].total));
 
     const totalProfit = totalSales - totalExpenses;
 
-
     /* =========================
-       PARTNER SUMMARY
+       PARTNERS
     ========================= */
-
     const partnersRes = await pool.query(
-      `
-      SELECT
-        p.id,
-        p.name,
-        p.share_percent,
-
-        COALESCE(d.total_deposits,0) AS deposits,
-        COALESCE(w.total_withdrawals,0) AS withdrawals,
-        COALESCE(e.total_expenses,0) AS expenses_paid
-
-      FROM partners p
-
-      LEFT JOIN (
-        SELECT partner_id, SUM(amount) AS total_deposits
-        FROM cash_deposits
-        WHERE restaurant_id=$1
-        GROUP BY partner_id
-      ) d ON d.partner_id = p.id
-
-      LEFT JOIN (
-        SELECT partner_id, SUM(amount) AS total_withdrawals
-        FROM cash_withdrawals
-        WHERE restaurant_id=$1
-        GROUP BY partner_id
-      ) w ON w.partner_id = p.id
-
-      LEFT JOIN (
-        SELECT partner_id, SUM(amount) AS total_expenses
-        FROM expenses
-        WHERE restaurant_id=$1 AND is_paid = TRUE
-        GROUP BY partner_id
-      ) e ON e.partner_id = p.id
-
-      WHERE p.restaurant_id=$1
-      ORDER BY p.name
-      `,
+      `SELECT id, name, share_percent FROM partners WHERE restaurant_id=$1`,
       [restaurantId]
     );
 
+    const partners = [];
 
-    /* =========================
-       CALCULATE BALANCES
-    ========================= */
+    for (const p of partnersRes.rows) {
 
-    const partners = partnersRes.rows.map((p) => {
+      /* =========================
+         DEPOSITS (partner → business)
+      ========================= */
+      const depositRes = await pool.query(`
+        SELECT COALESCE(SUM(amount),0) as total
+        FROM bank_transactions
+        WHERE restaurant_id=$1
+        AND partner_id=$2
+        AND type='credit'
+      `, [restaurantId, p.id]);
 
-      const deposits = Number(p.deposits);
-      const withdrawals = Number(p.withdrawals);
-      const expensesPaid = Number(p.expenses_paid);
-      const sharePercent = Number(p.share_percent);
+      const deposits = Number(depositRes.rows[0].total);
 
-      const profitShare = (totalProfit * sharePercent) / 100;
+      /* =========================
+         WITHDRAWALS (business → partner)
+      ========================= */
+      const withdrawRes = await pool.query(`
+        SELECT COALESCE(SUM(amount),0) as total
+        FROM cash_withdrawals
+        WHERE restaurant_id=$1
+        AND partner_id=$2
+      `, [restaurantId, p.id]);
 
+      const withdrawals = Number(withdrawRes.rows[0].total);
+
+      /* =========================
+         EXPENSES PAID BY PARTNER
+      ========================= */
+      const expensePaidRes = await pool.query(`
+        SELECT COALESCE(SUM(amount),0) as total
+        FROM expenses
+        WHERE restaurant_id=$1
+        AND partner_id=$2
+        AND is_paid=TRUE
+      `, [restaurantId, p.id]);
+
+      const expensesPaid = Number(expensePaidRes.rows[0].total);
+
+      /* =========================
+         PROFIT SHARE
+      ========================= */
+      const profitShare = (totalProfit * p.share_percent) / 100;
+
+      /* =========================
+         NET BALANCE
+      ========================= */
       const netBalance =
         deposits
         - withdrawals
-        + expensesPaid
+        - expensesPaid
         + profitShare;
 
-      return {
+      partners.push({
         id: p.id,
         name: p.name,
-        share_percent: sharePercent,
-
+        share_percent: p.share_percent,
         deposits,
         withdrawals,
         expenses_paid: expensesPaid,
-
         profit_share: profitShare,
         net_balance: netBalance
-      };
-    });
-
-
-    /* =========================
-       RESPONSE
-    ========================= */
+      });
+    }
 
     res.json({
       total_sales: totalSales,
@@ -246,72 +285,81 @@ router.get("/ledger", authenticate, requireAdmin, async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Partner ledger error:", err);
-    res.status(500).json({ message: "Server error" });
+    req.log.error({ err }, "Ledger error");
+    res.status(500).json({ message: "Ledger error" });
   }
 });
 
-/* =========================
-   SINGLE PARTNER LEDGER
-========================= */
-
+/* =========================================
+   SINGLE PARTNER HISTORY
+========================================= */
 router.get("/:id/ledger", authenticate, requireAdmin, async (req, res) => {
   try {
-
     const { restaurantId } = req;
     const { id } = req.params;
 
+    const partnerRes = await pool.query(
+      `SELECT name FROM partners WHERE id=$1 AND restaurant_id=$2`,
+      [id, restaurantId]
+    );
+    const partnerName = partnerRes.rows[0]?.name ?? `Partner #${id}`;
+
     const result = await pool.query(
       `
-      SELECT *
-FROM (
+      -- Cash withdrawals tagged to this partner
+      SELECT
+        'cash_withdrawal' AS event_type,
+        cw.amount,
+        cw.created_at,
+        jsonb_build_object(
+          'reason', cw.reason::text,
+          'description', cw.description
+        ) AS metadata
+      FROM cash_withdrawals cw
+      WHERE cw.restaurant_id = $1 AND cw.partner_id = $2
 
-  SELECT
-    created_at,
-    'deposit' AS type,
-    amount,
-    reason::text,
-    description
-  FROM cash_deposits
-  WHERE restaurant_id=$1
-  AND partner_id=$2
+      UNION ALL
 
-  UNION ALL
+      -- Bank transactions tagged to this partner
+      SELECT
+        CASE WHEN bt.type = 'credit' THEN 'bank_deposit' ELSE 'bank_withdrawal' END,
+        bt.amount,
+        bt.created_at,
+        jsonb_build_object('description', bt.description) AS metadata
+      FROM bank_transactions bt
+      WHERE bt.restaurant_id = $1 AND bt.partner_id = $2
 
-  SELECT
-  created_at,
-  'withdrawal' AS type,
-  -amount AS amount,
-  reason::text,
-  description
-FROM cash_withdrawals
-  WHERE restaurant_id=$1
-  AND partner_id=$2
+      UNION ALL
 
-  UNION ALL
+      -- Expenses paid by / attributed to this partner
+      SELECT
+        'expense_paid' AS event_type,
+        e.amount,
+        COALESCE(e.paid_at, e.created_at) AS created_at,
+        jsonb_build_object(
+          'description', e.description,
+          'category', e.category
+        ) AS metadata
+      FROM expenses e
+      WHERE e.restaurant_id = $1 AND e.partner_id = $2 AND e.is_paid = TRUE
 
-  SELECT
-    created_at,
-    'expense' AS type,
-    amount,
-    category::text AS reason,
-    description
-  FROM expenses
-  WHERE restaurant_id=$1
-  AND partner_id=$2
-  AND is_paid = TRUE
-
-) t
-ORDER BY created_at DESC
+      ORDER BY created_at ASC
       `,
       [restaurantId, id]
     );
 
-    res.json(result.rows);
+    const rows = result.rows.map(r => ({
+      ...r,
+      amount: Number(r.amount),
+      partner_name: partnerName,
+    }));
+
+    res.json(rows);
 
   } catch (err) {
-    console.error("Partner ledger history error:", err);
-    res.status(500).json({ message: "Server error" });
+    req.log.error({ err }, "Ledger fetch failed");
+    res.status(500).json({ message: "Ledger fetch failed" });
   }
 });
+
 export default router;

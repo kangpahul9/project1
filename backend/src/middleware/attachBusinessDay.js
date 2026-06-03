@@ -1,10 +1,18 @@
 import pool from "../config/db.js";
+import logger from "../utils/logger.js";
 import { getBusinessDay } from "../utils/getBusinessDay.js";
 
 export async function attachBusinessDay(req, res, next) {
+  if (!req.restaurantId) {
+    return res.status(400).json({
+      message: "Restaurant context missing",
+    });
+  }
 
-  if (!req.restaurantId || !req.settings) {
-    return next();
+  if (!req.settings) {
+    return res.status(500).json({
+      message: "Settings not loaded",
+    });
   }
 
   const client = await pool.connect();
@@ -17,9 +25,13 @@ export async function attachBusinessDay(req, res, next) {
       req.user?.id
     );
 
-    next();
+    return next();
   } catch (err) {
-    return next(err);
+    logger.error({ err }, "attachBusinessDay error");
+
+    return res.status(500).json({
+      message: "Failed to attach business day",
+    });
   } finally {
     client.release();
   }

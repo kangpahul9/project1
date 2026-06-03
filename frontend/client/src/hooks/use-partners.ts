@@ -1,121 +1,180 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { get, post, put, del } from "@/lib/api";
+import { toastPromise, toastError } from "@/hooks/use-toast";
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
+// ================= TYPES =================
 
-function getAuthHeaders() {
-  const token = localStorage.getItem("token");
-  return {
-    "Content-Type": "application/json",
-    ...(token && { Authorization: `Bearer ${token}` }),
-  };
+export interface Partner {
+  id: number;
+  name: string;
+  phone?: string;
+  email?: string;
+  share_percent: number;
 }
+
+interface PartnerPayload {
+  name: string;
+  phone?: string;
+  email?: string;
+  share_percent: number;
+}
+
+// 🔥 CORRECT LEDGER TYPE
+interface PartnerLedgerSummary {
+  total_sales: number;
+  total_expenses: number;
+  total_profit: number;
+
+  partners: {
+    id: number;
+    name: string;
+    share_percent: number;
+
+    deposits: number;
+    withdrawals: number;
+    expenses_paid: number;
+
+    profit_share: number;
+    net_balance: number;
+  }[];
+}
+
+interface PartnerLedgerEntry {
+  id: number;
+  event_type: string;
+  amount: number;
+  created_at: string;
+  metadata?: any;
+  partner_name?: string;
+}
+
+// ================= HELPERS =================
+
+const generateIdempotencyKey = () =>
+  `partner_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+// ================= PARTNERS =================
 
 export function usePartners() {
   return useQuery({
     queryKey: ["partners"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/partners`, {
-        headers: getAuthHeaders(),
-      });
-
-      if (!res.ok) throw new Error("Failed to fetch partners");
-
-      return await res.json();
-    },
+    queryFn: () => get<Partner[]>("/partners"),
+    staleTime: 1000 * 60,
   });
 }
+
+// ================= CREATE =================
 
 export function useCreatePartner() {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: any) => {
-      const res = await fetch(`${API_BASE}/partners`, {
-        method: "POST",
-        headers: {
-          ...getAuthHeaders(),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
+    mutationFn: async (data: PartnerPayload) => {
+      if (data.share_percent < 0 || data.share_percent > 100) {
+        throw new Error("Share % must be between 0–100");
+      }
+
+      const promise = post("/partners", {
+        ...data,
+        idempotencyKey: generateIdempotencyKey(), // 🔥 REQUIRED
       });
 
-      if (!res.ok) throw new Error("Failed to create partner");
-
-      return res.json();
+      return toastPromise(promise, {
+        loading: "Creating partner...",
+        success: "Partner created",
+        error: (err) => err?.message || "Failed to create partner",
+      });
     },
 
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["partners"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["partners"] });
+      qc.invalidateQueries({ queryKey: ["partner-ledger"] }); // 🔥
+    },
+
+    onError: () => {
+      toastError("Unable to create partner");
+    },
   });
 }
+
+// ================= UPDATE =================
 
 export function useUpdatePartner() {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, ...data }: any) => {
-      const res = await fetch(`${API_BASE}/partners/${id}`, {
-        method: "PATCH",
-        headers: {
-          ...getAuthHeaders(),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
+    mutationFn: async ({ id, ...data }: PartnerPayload & { id: number }) => {
+      if (data.share_percent < 0 || data.share_percent > 100) {
+        throw new Error("Share % must be between 0–100");
+      }
+
+      const promise = put(`/partners/${id}`, data);
+
+      return toastPromise(promise, {
+        loading: "Updating partner...",
+        success: "Partner updated",
+        error: (err) => err?.message || "Update failed",
       });
-
-      if (!res.ok) throw new Error("Failed to update partner");
-
-      return res.json();
     },
 
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["partners"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["partners"] });
+      qc.invalidateQueries({ queryKey: ["partner-ledger"] });
+    },
+
+    onError: () => {
+      toastError("Unable to update partner");
+    },
   });
 }
+
+// ================= DELETE =================
 
 export function useDeletePartner() {
   const qc = useQueryClient();
 
   return useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`${API_BASE}/partners/${id}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
+      const promise = del(`/partners/${id}`);
+
+      return toastPromise(promise, {
+        loading: "Deleting partner...",
+        success: "Partner deleted",
+        error: (err) => err?.message || "Delete failed",
       });
-
-      if (!res.ok) throw new Error("Failed to delete partner");
-
-      return res.json();
     },
 
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["partners"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["partners"] });
+      qc.invalidateQueries({ queryKey: ["partner-ledger"] });
+    },
+
+    onError: () => {
+      toastError("Unable to delete partner");
+    },
   });
 }
+
+// ================= LEDGER SUMMARY =================
+
 export function usePartnerLedger() {
   return useQuery({
     queryKey: ["partner-ledger"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/partners/ledger`, {
-        headers: getAuthHeaders(),
-      });
-
-      if (!res.ok) throw new Error("Failed to fetch partner ledger");
-
-      return res.json();
-    },
+    queryFn: () => get<PartnerLedgerSummary>("/partners/ledger"),
+    staleTime: 1000 * 30,
   });
 }
 
-export function usePartnerHistory(partnerId: number) {
+// ================= INDIVIDUAL HISTORY =================
+
+export function usePartnerHistory(partnerId?: number) {
   return useQuery({
     queryKey: ["partner-history", partnerId],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/partners/${partnerId}/ledger`, {
-        headers: getAuthHeaders(),
-      });
-
-      if (!res.ok) throw new Error("Failed to fetch partner ledger");
-
-      return res.json();
-    },
     enabled: !!partnerId,
+
+    queryFn: () =>
+      get<PartnerLedgerEntry[]>(`/partners/${partnerId}/ledger`),
+
+    staleTime: 1000 * 30,
   });
 }

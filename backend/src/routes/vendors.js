@@ -1,7 +1,8 @@
 import express from "express";
 import pool from "../config/db.js";
 import { authenticate, requireAdmin } from "../middleware/authMiddleware.js";
-import { addBankTransaction } from "../utils/bankLedger.js";
+import { bankWithEvent } from "../utils/bankLedger.js";
+import {logEvent} from "../utils/ledger.js";
 
 const router = express.Router();
 
@@ -11,18 +12,23 @@ const router = express.Router();
 
 
 
-router.get("/", authenticate,async (req, res) => {
-  console.log(req.settings);
-  console.log("RestaurantID:", req.restaurantId);
-  
+router.get("/", authenticate, async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT id, name, phone FROM vendors WHERE restaurant_id=$1 ORDER BY name ASC",[req.restaurantId]
+      `
+      SELECT id, name, phone, is_active
+      FROM vendors
+      WHERE restaurant_id=$1
+      ORDER BY name ASC
+      `,
+      [req.restaurantId]
     );
+
     res.json(result.rows);
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    req.log.error({ err }, "Failed to fetch vendors");
+    res.status(500).json({ message: "Failed to fetch vendors" });
   }
 });
 
@@ -32,51 +38,120 @@ router.get("/", authenticate,async (req, res) => {
 router.post("/", authenticate, requireAdmin, async (req, res) => {
   const { name, phone } = req.body;
 
-  if (!name) {
+  if (!name || !name.trim()) {
     return res.status(400).json({ message: "Vendor name required" });
   }
 
   try {
+    const exists = await pool.query(
+      `
+      SELECT 1 FROM vendors
+      WHERE restaurant_id=$1 AND LOWER(name)=LOWER($2)
+      `,
+      [req.restaurantId, name.trim()]
+    );
+
+    if (exists.rows.length) {
+      return res.status(400).json({ message: "Vendor already exists" });
+    }
+
     const result = await pool.query(
-      "INSERT INTO vendors (restaurant_id,name, phone, created_by) VALUES ($1, $2, $3,$4) RETURNING *",
-      [req.restaurantId,name.trim(), phone || null, req.user.id]
+      `
+      INSERT INTO vendors (restaurant_id, name, phone, created_by)
+      VALUES ($1,$2,$3,$4)
+      RETURNING *
+      `,
+      [req.restaurantId, name.trim(), phone || null, req.user.id]
     );
 
     res.status(201).json(result.rows[0]);
+
   } catch (err) {
-    if (err.code === "23505") {
-      return res.status(400).json({ message: "Vendor already exists" });
-    }
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    req.log.error({ err }, "Failed to create vendor");
+    res.status(500).json({ message: "Failed to create vendor" });
   }
 });
 
 
-router.get("/summary", authenticate,requireAdmin, async (req, res) => {
+router.get("/with-balance", authenticate, requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
   v.id,
   v.name,
-  COALESCE(SUM(CASE WHEN e.is_paid = FALSE THEN e.amount END), 0) AS total_unpaid,
-  COALESCE(
-    SUM(CASE WHEN e.is_paid = TRUE THEN COALESCE(e.amount_paid,0) END),
-    0
-  ) AS total_paid,
-  COALESCE(SUM(e.amount), 0) AS lifetime_total
-FROM vendors v
-LEFT JOIN expenses e 
-  ON e.vendor_id = v.id 
-  AND e.restaurant_id = $1
-WHERE v.restaurant_id = $1
-GROUP BY v.id
-ORDER BY v.name ASC
+
+  COALESCE((
+    SELECT SUM(amount)
+    FROM expenses e
+    WHERE e.vendor_id = v.id AND e.restaurant_id=$1
+  ),0) AS total_purchase,
+
+  COALESCE((
+    SELECT SUM(total_paid)
+    FROM vendor_settlements vs
+    WHERE vs.vendor_id = v.id AND vs.restaurant_id=$1
+  ),0) AS total_paid
+
+      FROM vendors v
+
+      LEFT JOIN expenses e 
+        ON e.vendor_id = v.id AND e.restaurant_id=$1
+
+      LEFT JOIN vendor_settlements vs
+        ON vs.vendor_id = v.id AND vs.restaurant_id=$1
+
+      WHERE v.restaurant_id=$1
+      GROUP BY v.id
+      ORDER BY v.name ASC
     `,[req.restaurantId]);
 
     res.json(result.rows);
+
   } catch (err) {
-    console.error(err);
+    res.status(500).json({ message: "Failed to fetch balances" });
+  }
+});
+
+router.get("/summary", authenticate, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        v.id,
+        v.name,
+
+        /* TOTAL UNPAID */
+        COALESCE(SUM(
+          CASE 
+            WHEN e.is_paid = FALSE THEN e.amount 
+            ELSE 0 
+          END
+        ),0) AS total_unpaid,
+
+        /* TOTAL PAID (SETTLEMENT SOURCE OF TRUTH) */
+        COALESCE(SUM(vs.total_paid),0) AS total_paid,
+
+        /* LIFETIME PURCHASE */
+        COALESCE(SUM(e.amount),0) AS lifetime_total
+
+      FROM vendors v
+
+      LEFT JOIN expenses e 
+        ON e.vendor_id = v.id 
+        AND e.restaurant_id = $1
+
+      LEFT JOIN vendor_settlements vs
+        ON vs.vendor_id = v.id
+        AND vs.restaurant_id = $1
+
+      WHERE v.restaurant_id = $1
+      GROUP BY v.id
+      ORDER BY v.name ASC
+    `,[req.restaurantId]);
+
+    res.json(result.rows);
+
+  } catch (err) {
+    req.log.error({ err }, "Failed to fetch vendor summary");
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -104,7 +179,7 @@ WHERE e.restaurant_id=$1 AND e.vendor_id = $2
 
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    req.log.error({ err }, "Failed to fetch unpaid expenses");
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -151,6 +226,10 @@ if (!vendorCheck.rows.length) {
     =============================== */
   const businessDayId = req.businessDayId;
 
+  if (req.settings.use_business_day && !req.businessDayId) {
+  throw new Error("Business day not active");
+}
+
     /* ===============================
        VALIDATE EXPENSES
     =============================== */
@@ -175,7 +254,7 @@ if (!vendorCheck.rows.length) {
       0
     );
 
-    if (parseFloat(final_amount) > totalDue) {
+    if (Number(final_amount) > totalDue) {
       await client.query("ROLLBACK");
       return res.status(400).json({ message: "Final amount exceeds total due" });
     }
@@ -202,7 +281,7 @@ if (
     calculatedTotal += Number(value) * Number(qty);
   }
 
-  if (calculatedTotal !== parseFloat(final_amount)) {
+  if (calculatedTotal !== Number(final_amount)) {
     await client.query("ROLLBACK");
     return res.status(400).json({ message: "Denomination total mismatch" });
   }
@@ -259,6 +338,21 @@ RETURNING id
   );
 
   withdrawalId = withdrawalRes.rows[0].id;
+
+  await logEvent(client, {
+  restaurantId: req.restaurantId,
+  businessDayId,
+  entityType: "cash",
+  entityId: withdrawalId,
+  eventType: "cash_withdrawal",
+  amount: -final_amount,
+  metadata: {
+  vendorId,
+  expenseIds,
+  payment_method
+},
+  userId: req.user.id
+});
 }
     /* ===============================
        CREATE SETTLEMENT RECORD
@@ -292,35 +386,39 @@ RETURNING id
 
     const settlementId = settlementRes.rows[0].id;
 
+    
+    
+
     // 🔥 BANK LEDGER (ONLY ONLINE/CARD)
 if (["online", "card"].includes(payment_method)) {
 
-  const bankRes = await client.query(
+  let bankRes = await client.query(
     `SELECT id FROM bank_accounts WHERE restaurant_id=$1 LIMIT 1`,
     [req.restaurantId]
   );
-
-  const bankAccountId = bankRes.rows[0]?.id;
-
-  if (!bankAccountId) {
-    throw new Error("Bank account not configured");
+  if (!bankRes.rows.length) {
+    bankRes = await client.query(
+      `INSERT INTO bank_accounts (restaurant_id, name) VALUES ($1, 'Default Account') RETURNING id`,
+      [req.restaurantId]
+    );
   }
+  const bankAccountId = bankRes.rows[0].id;
 
-  await addBankTransaction(client, {
-    restaurantId: req.restaurantId,
-    bankAccountId,
-    amount: final_amount,
-    type: "debit",
-    source: "vendor_settlement",
-    referenceId: settlementId,
-    description: "Vendor settlement"
-  });
+ await bankWithEvent(client, {
+  restaurantId: req.restaurantId,
+  bankAccountId,
+  amount: final_amount,
+  type: "debit",
+  source: "vendor_settlement",
+  referenceId: settlementId,
+  createdBy: req.user.id
+});
 }
 
     /* ===============================
        PROPORTIONAL DISTRIBUTION
     =============================== */
-    const ratio = parseFloat(final_amount) / totalDue;
+    const ratio = Number(final_amount) / totalDue;
 
     for (const expense of expensesRes.rows) {
 const proportionalPaid = Math.round(
@@ -355,13 +453,13 @@ const proportionalPaid = Math.round(
       message: "Settlement successful",
       settlement_id: settlementId,
       total_due: totalDue,
-      total_paid: parseFloat(final_amount),
-      difference: totalDue - parseFloat(final_amount),
+      total_paid: Number(final_amount),
+      difference: totalDue - Number(final_amount),
     });
 
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error(err);
+    req.log.error({ err }, "Failed to settle vendor");
     res.status(500).json({ message: "Server error" });
   } finally {
     client.release();
@@ -398,8 +496,136 @@ router.get("/:id/settlements", authenticate, requireAdmin,async (req, res) => {
 
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    req.log.error({ err }, "Failed to fetch settlements");
     res.status(500).json({ message: "Failed to fetch settlements" });
   }
 });
+
+router.get("/:id/payments", authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const vendorCheck = await pool.query(
+  `SELECT id FROM vendors WHERE id=$1 AND restaurant_id=$2`,
+  [id, req.restaurantId]
+);
+
+if (!vendorCheck.rows.length) {
+  return res.status(404).json({ message: "Vendor not found" });
+}
+
+    const result = await pool.query(`
+      SELECT 
+        vs.id,
+        vs.total_paid,
+        vs.payment_method,
+        vs.created_at,
+        u.name AS created_by,
+        'settlement' AS type
+
+      FROM vendor_settlements vs
+      JOIN users u ON u.id = vs.created_by
+
+      WHERE vs.vendor_id=$1 AND vs.restaurant_id=$2
+
+      ORDER BY vs.created_at DESC
+    `,[id, req.restaurantId]);
+
+    res.json(result.rows);
+
+  } catch (err) {
+    req.log.error({ err }, "Failed to fetch payments");
+    res.status(500).json({ message: "Failed to fetch payments" });
+  }
+});
+
+router.get("/:id/ledger", authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const rows = await pool.query(`
+      SELECT 
+        'expense' AS type,
+        e.amount,
+        e.created_at
+
+      FROM expenses e
+      WHERE e.vendor_id=$1 AND e.restaurant_id=$2
+
+      UNION ALL
+
+      SELECT
+        'payment' AS type,
+        -vs.total_paid AS amount,
+        vs.created_at
+
+      FROM vendor_settlements vs
+      WHERE vs.vendor_id=$1 AND vs.restaurant_id=$2
+
+      ORDER BY created_at ASC
+    `,[id, req.restaurantId]);
+
+    let balance = 0;
+
+    const ledger = rows.rows.map(r => {
+      balance += Number(r.amount);
+      return {
+        ...r,
+        balance
+      };
+    });
+
+    res.json(ledger);
+
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch ledger" });
+  }
+});
+
+router.get("/:id", authenticate, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM vendors
+      WHERE id=$1 AND restaurant_id=$2
+      `,
+      [req.params.id, req.restaurantId]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ message: "Vendor not found" });
+    }
+
+    res.json(result.rows[0]);
+
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch vendor" });
+  }
+});
+
+
+router.delete("/:id", authenticate, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      UPDATE vendors
+      SET is_active = FALSE
+      WHERE id=$1 AND restaurant_id=$2
+      RETURNING id
+      `,
+      [req.params.id, req.restaurantId]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ message: "Vendor not found" });
+    }
+
+    res.json({ message: "Vendor deactivated" });
+
+  } catch (err) {
+    res.status(500).json({ message: "Failed to delete vendor" });
+  }
+});
+
 export default router;

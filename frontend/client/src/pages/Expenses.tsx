@@ -1,12 +1,13 @@
 import { Sidebar } from "@/components/Sidebar";
+import { useCurrency, useDenominations } from "@/hooks/use-currency";
 import {
   useExpenses,
   useCreateExpense,
   useUploadExpenseImage,
   useDeleteExpense,
-  useUpdateExpense
+  useUpdateExpense,
 } from "@/hooks/use-expenses";
-import {DenominationSelector} from "@/components/DenominationSelector";
+import { DenominationSelector } from "@/components/DenominationSelector";
 import { useStaff } from "@/hooks/use-staff";
 import { useCurrentBusinessDay } from "@/hooks/use-business-days";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
@@ -33,743 +35,711 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useForm } from "react-hook-form";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Wallet, Eye,Download,Pencil, Trash2 } from "lucide-react";
-import { useState,useEffect } from "react";
-import { format } from "date-fns";
+import {
+  Plus, Wallet, Eye, Download, Pencil, Trash2, ScanLine,
+  Loader2, AlertTriangle, Search, Receipt,
+} from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { toastError } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { format as formatDate } from "date-fns";
 import { useVendorSummary } from "@/hooks/use-vendors";
-import { withApiBase } from "@/lib/api-base";
+import { withUploads } from "@/lib/api-base";
 import { usePartners } from "@/hooks/use-partners";
+import { cn } from "@/lib/utils";
+
+// ── category meta ─────────────────────────────────────────────────────────────
+const CAT_META: Record<string, { label: string; color: string; dot: string }> = {
+  supplies:      { label: "Supplies",      color: "bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300",   dot: "bg-blue-500" },
+  salary:        { label: "Salary",        color: "bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300", dot: "bg-violet-500" },
+  utility:       { label: "Utility",       color: "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300", dot: "bg-amber-500" },
+  miscellaneous: { label: "Miscellaneous", color: "bg-muted text-muted-foreground", dot: "bg-muted-foreground" },
+};
+
+const PM_LABEL: Record<string, string> = {
+  cash: "Cash", online: "Online", card: "Card",
+};
 
 export default function Expenses() {
-  const { data: expenses, isLoading } = useExpenses();
-  const { data: currentDay } = useCurrentBusinessDay();
-  const { mutate: createExpense, isPending } = useCreateExpense();
-
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
+  const { format } = useCurrency();
+  const denoms = useDenominations();
+  const { data: currentDay } = useCurrentBusinessDay(true);
+  const { data: expenses, isLoading } = useExpenses(true, currentDay?.id);
+  const { mutate: createExpense, isPending } = useCreateExpense(true);
+  const { mutate: updateExpense } = useUpdateExpense(true);
   const { data: partners } = usePartners();
-  const [partnerId,setPartnerId] = useState<number | null>(null);
-
   const uploadImage = useUploadExpenseImage();
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const { data: vendors } = useVendorSummary();
+  const vendorsList = vendors ?? [];
+  const { data: staff } = useStaff();
+  const { mutate: deleteExpense } = useDeleteExpense();
+
+  const [partnerId, setPartnerId] = useState<number | null>(null);
   const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const { data: vendors } = useVendorSummary();
-  const { data: staff } = useStaff();
+  const [editingExpense, setEditingExpense] = useState<any>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const { mutate: deleteExpense } = useDeleteExpense();
-const { mutate: updateExpense } = useUpdateExpense();
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+  const [deductFromGalla, setDeductFromGalla] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const scanInputRef = useRef<HTMLInputElement>(null);
+  const [selectedNotes, setSelectedNotes] = useState(
+    () => denoms.map((d) => ({ note: d, qty: 0 }))
+  );
 
-const [editingExpense, setEditingExpense] = useState<any>(null);
   const form = useForm({
     defaultValues: {
-  description: "",
-  amount: 0,
-  category: "supplies",
-  paymentMode: "online",
-  vendorId: "",
-  utilityType: "",
-  isPaid: false,
-  staff_id: "",
-  date: new Date().toISOString().slice(0, 10),
-},
+      description: "",
+      amount: 0,
+      category: "supplies",
+      paymentMode: "online",
+      vendorId: "",
+      utilityType: "",
+      isPaid: false,
+      staff_id: "",
+      date: new Date().toISOString().slice(0, 10),
+    },
   });
 
-  const [deductFromGalla, setDeductFromGalla] = useState(false);
+  const selectedCategory = form.watch("category");
+  const paymentMode = form.watch("paymentMode");
 
-const DENOMS = [500,200,100,50,20,10,5,2,1];
-const [selectedNotes, setSelectedNotes] = useState(
-  DENOMS.map(d => ({ note: d, qty: 0 }))
-);
+  useEffect(() => {
+    if (paymentMode === "cash" && deductFromGalla) {
+      const total = selectedNotes.reduce((s, n) => s + n.note * n.qty, 0);
+      form.setValue("amount", total);
+    }
+  }, [selectedNotes, deductFromGalla, paymentMode]);
 
-useEffect(() => {
-  if (form.watch("paymentMode") === "cash" && deductFromGalla) {
-    const total = selectedNotes.reduce(
-      (sum, note) => sum + note.note * note.qty,
-      0
-    );
+  useEffect(() => {
+    if (paymentMode === "cash" && deductFromGalla) form.setValue("isPaid", true);
+  }, [deductFromGalla, paymentMode]);
 
-    form.setValue("amount", total);
-  }
-}, [selectedNotes, deductFromGalla, form.watch("paymentMode")]);
+  useEffect(() => {
+    if (paymentMode === "cash" && deductFromGalla) setPartnerId(null);
+  }, [deductFromGalla, paymentMode]);
 
-useEffect(() => {
-  if (form.watch("paymentMode") === "cash" && deductFromGalla) {
-    form.setValue("isPaid", true);
-  }
-}, [deductFromGalla, form.watch("paymentMode")]);
-
-useEffect(() => {
-  if (form.watch("paymentMode") === "cash" && deductFromGalla) {
+  const resetDialog = () => {
+    setEditingExpense(null);
     setPartnerId(null);
-  }
-}, [deductFromGalla, form.watch("paymentMode")]);
+    setUploadedUrl(null);
+    setDeductFromGalla(false);
+    setSelectedNotes(denoms.map((d) => ({ note: d, qty: 0 })));
+    form.reset({
+      description: "", amount: 0, category: "supplies",
+      paymentMode: "online", vendorId: "", utilityType: "",
+      isPaid: false, staff_id: "",
+      date: new Date().toISOString().slice(0, 10),
+    });
+  };
+
+  const handleScanBill = async (file: File) => {
+    setIsScanning(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/expenses/scan-bill`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Scan failed");
+      const data = await res.json();
+
+      // Build description from line items if available, else fall back to vendor name
+      const items: Array<{ name: string; qty?: number; total?: number }> = Array.isArray(data.items) ? data.items : [];
+      let description = "";
+      if (items.length === 1) {
+        description = items[0].name ?? "";
+      } else if (items.length > 1) {
+        description = items.map(i => i.qty ? `${i.name} x${i.qty}` : i.name).join(", ");
+      }
+      if (!description && data.vendor_name) description = data.vendor_name;
+
+      const amount = data.total_amount ?? data.amount;
+      if (amount) form.setValue("amount", Number(amount));
+      if (description) form.setValue("description", description);
+      if (data.date) form.setValue("date", data.date);
+      if (data.category && ["supplies","utility","miscellaneous","salary"].includes(data.category))
+        form.setValue("category", data.category);
+      // Auto-fill vendor if matched
+      if (data.vendor_id) form.setValue("vendorId", String(data.vendor_id));
+      if (data.document_url) setUploadedUrl(data.document_url);
+    } catch { /* silent — user fills manually */ }
+    finally { setIsScanning(false); }
+  };
 
   const onSubmit = (data: any) => {
-  if (!currentDay) return;
+    if (!currentDay) return;
+    if (!data.description.trim()) { toastError("Description is required"); return; }
+    if (data.amount <= 0) { toastError("Amount must be greater than 0"); return; }
 
-  if (!data.description.trim()) {
-    alert("Description is required");
-    return;
-  }
+    const denominationObject = Object.fromEntries(
+      selectedNotes.filter((n) => n.qty > 0).map((n) => [n.note, n.qty])
+    );
+    const payload = {
+      ...data,
+      date: data.date ? new Date(data.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      vendorId: data.vendorId ? Number(data.vendorId) : null,
+      staff_id: data.staff_id ? Number(data.staff_id) : null,
+      partnerId,
+      is_paid: data.isPaid,
+      businessDayId: currentDay.id,
+      document_url: uploadedUrl,
+      deduct_from_galla: deductFromGalla,
+      source: "manual",
+      ...(data.paymentMode === "cash" && deductFromGalla && { denominations: denominationObject }),
+    };
 
-  if (data.amount <= 0) {
-    alert("Amount must be greater than 0");
-    return;
-  }
+    if (editingExpense) {
+      updateExpense({ id: editingExpense.id, ...payload }, {
+        onSuccess: () => { setOpen(false); resetDialog(); },
+      });
+    } else {
+      createExpense(payload, {
+        onSuccess: () => { setOpen(false); resetDialog(); },
+      });
+    }
+  };
 
-  const denominationObject = Object.fromEntries(
-  selectedNotes
-    .filter(n => n.qty > 0)
-    .map(n => [n.note, n.qty])
-);
+  const handleEdit = (expense: any) => {
+    setEditingExpense(expense);
+    setUploadedUrl(expense.document_url || null);
+    setPartnerId(expense.partner_id || null);
+    form.reset({
+      description: expense.description,
+      amount: Number(expense.amount),
+      category: expense.category,
+      paymentMode: expense.payment_method,
+      vendorId: expense.vendor_id?.toString() || "",
+      staff_id: expense.staff_id?.toString() || "",
+      utilityType: expense.utility_type || "",
+      isPaid: expense.is_paid || false,
+      date: expense.expense_date || new Date(expense.created_at).toISOString().slice(0, 10),
+    });
+    setOpen(true);
+  };
 
-const payload = {
-  ...data,
-  date: data.date
-  ? new Date(data.date).toISOString().slice(0, 10)
-  : new Date().toISOString().slice(0, 10),
-  vendorId: data.vendorId ? Number(data.vendorId) : null,
-staff_id: data.staff_id ? Number(data.staff_id) : null,
-partnerId,
-  is_paid: data.isPaid,
-  businessDayId: currentDay.id,
-  document_url: uploadedUrl,
-  deduct_from_galla: deductFromGalla,
-  source: "manual",
-  ...(data.paymentMode === "cash" && deductFromGalla && {
-    denominations: denominationObject
-  })
-};
+  // ── derived ──────────────────────────────────────────────────────────────
+  const filteredExpenses = (expenses ?? []).filter((e: any) => {
+    const term = searchTerm.toLowerCase();
+    const matchesCat = filterCategory ? e.category === filterCategory : true;
+    const matchesSearch =
+      e.description?.toLowerCase().includes(term) ||
+      e.vendor_name?.toLowerCase().includes(term) ||
+      e.staff_name?.toLowerCase().includes(term);
+    return matchesCat && (term ? matchesSearch : true);
+  });
 
-  if (editingExpense) {
-    updateExpense(
-  { id: editingExpense.id, ...payload },
-  {
-    onSuccess: () => {
-      setOpen(false);
-      setEditingExpense(null);
-      form.reset({
-  description: "",
-  amount: 0,
-  category: "supplies",
-  paymentMode: "online",
-  vendorId: "",
-  utilityType: "",
-  isPaid: false,
-  staff_id: "",
-  date: new Date().toISOString().slice(0, 10), // ✅ KEEP TODAY
-});
-      setPartnerId(null);
-    },
-  }
-);
-  } else {
-    createExpense(payload, {
-  onSuccess: () => {
-    setOpen(false);
-    form.reset();
-    setPartnerId(null);
-  },
-});
-  }
-};
-const handleEdit = (expense: any) => {
-  setEditingExpense(expense);
-  setOpen(true);
-  form.reset({
-  description: expense.description,
-  amount: Number(expense.amount),
-  category: expense.category,
-  paymentMode: expense.payment_method,
-  vendorId: expense.vendor_id?.toString() || "",
-staff_id: expense.staff_id?.toString() || "",
-  utilityType: expense.utility_type || "",
-  isPaid: expense.is_paid || false,
-date: expense.expense_date
-  ? expense.expense_date
-  : new Date(expense.created_at).toISOString().slice(0, 10),
-});
-  setPartnerId(expense.partner_id || null)
-  setUploadedUrl(expense.document_url || null);
-};
-  const selectedCategory = form.watch("category");
+  const totalAll = (expenses ?? []).reduce((s: number, e: any) => s + Number(e.amount), 0);
+
+  const formatExpenseDate = (expense: any) => {
+    const raw = expense.expense_date || expense.created_at;
+    if (!raw) return "—";
+    const d = raw.length === 10 ? new Date(raw + "T00:00:00") : new Date(raw);
+    return isNaN(d.getTime()) ? "—" : formatDate(d, "MMM d, yyyy");
+  };
 
   return (
-    <div className="flex bg-gray-50 min-h-screen">
+    <div className="flex bg-background min-h-screen">
       <Sidebar />
-      <main className="flex-1 ml-0 lg:ml-64 p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8">
-  <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-         <h1 className="text-3xl font-bold font-display text-gray-900">
-            Expenses
-          </h1>
-          <Input
-  placeholder="Search expenses..."
-  value={searchTerm}
-  onChange={(e) => setSearchTerm(e.target.value)}
-  className="mb-6"
-/>
 
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button
-                disabled={!currentDay}
-                className="shadow-lg shadow-primary/20"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Expense
-              </Button>
-              
-            </DialogTrigger>
-            <DialogContent className="max-w-lg w-full max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Record New Expense</DialogTitle>
-              </DialogHeader>
-              <Form {...form}>
-                <form
-                  onSubmit={form.handleSubmit(onSubmit)}
-                  className="space-y-4"
+      <main className="flex-1 ml-0 lg:ml-60 p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8">
+        <div className="w-full">
+
+        {/* ── Header ── */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold text-foreground flex items-center gap-2.5">
+              <Receipt className="w-6 h-6 text-primary shrink-0" />
+              Expenses
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              {filteredExpenses.length} expense{filteredExpenses.length !== 1 ? "s" : ""}
+              {filterCategory ? ` · ${CAT_META[filterCategory]?.label}` : ""} · Total{" "}
+              <span className="font-semibold text-red-600 dark:text-red-400">{format(totalAll)}</span>
+            </p>
+          </div>
+
+          {isAdmin && (
+            <Button
+              disabled={!currentDay}
+              className="gap-2 shrink-0"
+              onClick={() => { resetDialog(); setOpen(true); }}
+            >
+              <Plus className="w-4 h-4" /> Add Expense
+            </Button>
+          )}
+        </div>
+
+        {/* ── Category summary filter ── */}
+        {!isLoading && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            {["supplies", "salary", "utility", "miscellaneous"].map((cat) => {
+              const total = (expenses ?? [])
+                .filter((e: any) => e.category === cat)
+                .reduce((s: number, e: any) => s + Number(e.amount), 0);
+              const meta = CAT_META[cat];
+              const active = filterCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setFilterCategory(active ? null : cat)}
+                  className={cn(
+                    "rounded-2xl border p-4 text-left transition-all hover:shadow-md",
+                    active
+                      ? "border-primary ring-1 ring-primary/30 bg-primary/5"
+                      : "border-border/60 bg-card hover:border-primary/20"
+                  )}
                 >
-                  <FormField
-                    control={form.control}
-                    name="description"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Description</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="amount"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Amount (₹)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              {...field}
-                                disabled={form.watch("paymentMode") === "cash" && deductFromGalla}
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={cn("w-2 h-2 rounded-full shrink-0", meta.dot)} />
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      {meta.label}
+                    </span>
+                  </div>
+                  <p className="text-lg font-bold text-red-600 dark:text-red-400">
+                    {format(total)}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-                              onChange={(e) =>
-                                field.onChange(Number(e.target.value))
-                              }
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-  control={form.control}
-  name="date"
-  render={({ field }) => (
-    <FormItem>
-      <FormLabel>Date</FormLabel>
-      <FormControl>
-        <Input
-          type="date"
-          max={new Date().toISOString().slice(0, 10)} // 🚫 no future
-          {...field}
-        />
-      </FormControl>
-    </FormItem>
-  )}
-/>
+        {/* ── Search ── */}
+        <div className="relative mb-5">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by description, vendor, or staff…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9"
+          />
+        </div>
 
-                    <FormField
-                      control={form.control}
-                      name="category"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Category</FormLabel>
-                          <Select
-                            value={field.value}
-                            onValueChange={field.onChange}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select category" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="supplies">Supplies</SelectItem>
-                              <SelectItem value="salary">Salary</SelectItem>
-                              <SelectItem value="utility">Utility</SelectItem>
-                              <SelectItem value="miscellaneous">Miscellaneous</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+        {/* ── List ── */}
+        {isLoading ? (
+          <div className="flex justify-center py-16">
+            <Loader2 className="animate-spin w-6 h-6 text-primary" />
+          </div>
+        ) : filteredExpenses.length === 0 ? (
+          <div className="bg-card rounded-2xl border border-border/60 p-12 text-center">
+            <Wallet className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
+            <p className="text-muted-foreground text-sm">No expenses found</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredExpenses.map((expense: any) => {
+              const meta = CAT_META[expense.category] ?? CAT_META.miscellaneous;
+              return (
+                <div
+                  key={expense.id}
+                  className="bg-card rounded-2xl border border-border/60 shadow-sm hover:shadow-md hover:border-primary/20 transition-all p-5 flex flex-col sm:flex-row sm:items-center gap-4"
+                >
+                  {/* Left: icon + info */}
+                  <div className="flex items-start gap-4 flex-1 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-950/30 flex items-center justify-center shrink-0">
+                      <Wallet className="w-5 h-5 text-red-500" />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className="font-semibold text-foreground text-sm">
+                          {expense.description}
+                        </span>
+                        <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full", meta.color)}>
+                          {meta.label}
+                        </span>
+                        {expense.is_paid && (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300">
+                            Paid
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {expense.vendor_name && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                            {expense.vendor_name}
+                          </span>
+                        )}
+                        {expense.staff_name && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300">
+                            {expense.staff_name}
+                          </span>
+                        )}
+                        {expense.partner_name && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                            {expense.partner_name}
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        {formatExpenseDate(expense)}
+                        {expense.created_by && (
+                          <span className="opacity-70 ml-1">· by {expense.created_by}</span>
+                        )}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    {selectedCategory === "supplies" && (
-                      <FormField
-                        control={form.control}
-                        name="vendorId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Vendor</FormLabel>
-                            <Select
-                              value={String(field.value)}
-                              onValueChange={(value) => field.onChange(value)}
-                            >
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select vendor" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {vendors?.map((vendor: any) => (
-                                  <SelectItem
-                                    key={vendor.id}
-                                    value={String(vendor.id)}
-                                  >
-                                    {vendor.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </FormItem>
-                        )}
-                      />
-                    )}
-                    {selectedCategory === "salary" && (
-  <FormField
-    control={form.control}
-    name="staff_id"
-    render={({ field }) => (
-      <FormItem>
-        <FormLabel>Staff</FormLabel>
-        <Select
-          value={String(field.value || "")}
-          onValueChange={(value) => field.onChange(value)}
-        >
-          <FormControl>
-            <SelectTrigger>
-              <SelectValue placeholder="Select staff" />
-            </SelectTrigger>
-          </FormControl>
-          <SelectContent>
-            {staff?.map((s: any) => (
-              <SelectItem key={s.id} value={String(s.id)}>
-                {s.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </FormItem>
-    )}
-  />
-)}
+                  {/* Right: amount + actions */}
+                  <div className="flex items-center gap-3 sm:gap-4 shrink-0 justify-between sm:justify-end w-full sm:w-auto">
+                    <div className="text-right">
+                      <p className="text-lg font-bold text-red-600 dark:text-red-400">
+                        -{format(expense.amount)}
+                      </p>
+                      <p className="text-xs text-muted-foreground uppercase mt-0.5">
+                        {PM_LABEL[expense.payment_method] ?? expense.payment_method}
+                      </p>
+                    </div>
 
-                    {selectedCategory === "utility" && (
-  <FormField
-    control={form.control}
-    name="utilityType"
-    render={({ field }) => (
-      <FormItem>
-        <FormLabel>Utility Type</FormLabel>
-        <Select
-          value={field.value}
-          onValueChange={field.onChange}
-        >
-          <FormControl>
-            <SelectTrigger>
-              <SelectValue placeholder="Select utility type" />
-            </SelectTrigger>
-          </FormControl>
-          <SelectContent>
-            <SelectItem value="rent">Rent</SelectItem>
-            <SelectItem value="electricity">Electricity</SelectItem>
-            <SelectItem value="water">Water</SelectItem>
-            <SelectItem value="internet">Internet</SelectItem>
-          </SelectContent>
-        </Select>
-      </FormItem>
-    )}
-  />
-)}
-                    <FormField
-                      control={form.control}
-                      name="paymentMode"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Payment Mode</FormLabel>
-                          <Select
-                            value={field.value}
-                            onValueChange={field.onChange}
+                    <div className="flex items-center gap-1">
+                      {expense.document_url && (
+                        <>
+                          <Button
+                            variant="outline" size="sm"
+                            onClick={() => setPreviewUrl(withUploads(expense.document_url))}
                           >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select mode" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="cash">Cash</SelectItem>
-                              <SelectItem value="online">Online</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <a href={withUploads(expense.document_url)} download>
+                            <Button variant="outline" size="sm">
+                              <Download className="w-4 h-4" />
+                            </Button>
+                          </a>
+                        </>
                       )}
-                    />
-  {partners &&
- partners.length > 0 &&
- form.watch("paymentMode") === "cash" &&   // ✅ ONLY CASH
- !deductFromGalla && (                     // ✅ AND NOT GALLA
-  <div>
-    <label className="text-sm font-medium">Paid By</label>
-
-    <Select
-      value={partnerId ? String(partnerId) : "staff"}
-      onValueChange={(value) => {
-        if (value === "staff") setPartnerId(null);
-        else setPartnerId(Number(value));
-      }}
-    >
-      <SelectTrigger>
-        <SelectValue placeholder="Select payer" />
-      </SelectTrigger>
-
-      <SelectContent>
-        {partners.map((p: any) => (
-          <SelectItem key={p.id} value={String(p.id)}>
-            {p.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  </div>
-)}
-
-                    <FormField
-  control={form.control}
-  name="isPaid"
-  render={({ field }) => {
-    const isCash = form.watch("paymentMode") === "cash";
-
-    // If deducting from galla → force paid = true
-    if (isCash && deductFromGalla && !field.value) {
-      field.onChange(true);
-    }
-
-    return (
-      <FormItem className="flex items-center gap-2">
-        <FormControl>
-          <input
-            type="checkbox"
-            checked={isCash && deductFromGalla ? true : field.value}
-            disabled={isCash && deductFromGalla}
-            onChange={(e) => field.onChange(e.target.checked)}
-          />
-        </FormControl>
-        <FormLabel>
-          Mark as Paid
-          {isCash && deductFromGalla && (
-            <span className="text-xs text-green-600 ml-2">
-              (Auto Paid via Galla)
-            </span>
-          )}
-        </FormLabel>
-      </FormItem>
-    );
-  }}
-/>
-                    {form.watch("paymentMode") === "cash" && (
-  <div className="flex items-center gap-2">
-    <input
-      type="checkbox"
-      checked={deductFromGalla}
-      onChange={(e) => setDeductFromGalla(e.target.checked)}
-    />
-    <label>Deduct from Galla</label>
-  </div>
-)}
-{form.watch("paymentMode") === "cash" && deductFromGalla && (
-  <DenominationSelector
-    breakdown={selectedNotes}
-    setBreakdown={setSelectedNotes}
-    title="Cash Used"
-  />
-)}
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Upload Bill (Photo or Image)
-                      </label>
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={async (e) => {
-                          if (!e.target.files?.length) return;
-
-                          const file = e.target.files[0];
-                          setSelectedFile(file);
-
-                          try {
-                            const url = await uploadImage(file);
-                            setUploadedUrl(url);
-                          } catch (err) {
-                            console.error(err);
-                          }
-                        }}
-                      />
-
-                      {uploadedUrl && (
-                        <img
-                          src={withApiBase(uploadedUrl)}
-                          className="mt-3 w-24 h-24 object-cover rounded border"
-                        />
+                      {isAdmin && (
+                        <>
+                          <Button
+                            variant="outline" size="sm"
+                            disabled={expense.is_paid}
+                            onClick={() => handleEdit(expense)}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="outline" size="sm"
+                            disabled={expense.is_paid}
+                            className="text-red-500 border-red-200 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/30 disabled:opacity-40"
+                            onClick={() => setDeleteTarget(expense.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
-                  <Button type="submit" className="w-full" disabled={isPending}>
-                    {isPending ? "Saving..." : "Record Expense"}
-                  </Button>
-                </form>
-              </Form>
-            </DialogContent>
-          </Dialog>
-        </div>
-
-        {/* Total Expenses Summary */}
-        {!isLoading && (
-          <div className="mb-6 bg-white p-6 rounded-xl shadow space-y-4">
-  <div className="flex justify-between items-center">
-  <h3 className="text-lg font-semibold">Expense Analytics</h3>
-
-  <Button
-    variant="outline"
-    size="sm"
-    onClick={() => setFilterCategory(null)}
-  >
-    All Expenses
-  </Button>
-</div>
-
-  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-    {["supplies","salary","utility","miscellaneous"].map(cat => {
-      const total = expenses
-        ?.filter((e:any)=>e.category===cat)
-        .reduce((sum:number,e:any)=>sum+Number(e.amount),0) || 0;
-
-      return (
-        <div
-  key={cat}
-  onClick={() =>
-    setFilterCategory(filterCategory === cat ? null : cat)
-  }
-  className={`p-3 rounded text-center cursor-pointer transition
-    ${
-      filterCategory === cat
-        ? "bg-red-100"
-        : "bg-gray-50 hover:bg-gray-100"
-    }`}
->
-          <p className="text-xs uppercase text-muted-foreground">{cat}</p>
-          <p className="font-bold text-red-600">₹{total}</p>
-        </div>
-      );
-    })}
-  </div>
-</div>
-        )}
-
-        {isLoading && (
-          <div className="text-center py-10 text-muted-foreground">
-            Loading expenses...
+                </div>
+              );
+            })}
           </div>
         )}
-
-        {!isLoading && (
-          <div className="grid gap-4">
-            {expenses
-  ?.filter((e: any) =>
-    filterCategory ? e.category === filterCategory : true
-  )
-  .filter((e: any) => {
-  const term = searchTerm.toLowerCase();
-
-  return (
-    e.description?.toLowerCase().includes(term) ||
-    e.vendor_name?.toLowerCase().includes(term) ||
-e.staff_name?.toLowerCase().includes(term)
-  );
-})
-  .map((expense: any) => (
-              <Card key={expense.id} className="hover:shadow-md transition-all">
-                <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 sm:p-6">
-  <div className="flex items-center gap-4">
-    <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600">
-      <Wallet className="w-5 h-5" />
-    </div>
-
-    <div>
-      <h3 className="font-semibold text-sm sm:text-base flex flex-wrap gap-1">{expense.description} {expense.category === "supplies" && expense.vendor_name && (
-  <span className="inline-block mt-1 px-2 py-0.5 text-s bg-blue-50 text-blue-700 rounded-full"> 
-    {expense.vendor_name}
-  </span>
-  
-)}
- {expense.category === "salary" && expense.staff_name && (
-  <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-green-50 text-green-700 rounded-full">
-    {expense.staff_name}
-  </span>
-)}
-{expense.partner_name && (
-  <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-purple-50 text-purple-700 rounded-full">
-    {expense.partner_name}
-  </span>
-)}</h3>
-      
-
-      <p className="text-sm text-muted-foreground">
-  {(() => {
-    const rawDate = expense.expense_date || expense.created_at;
-
-    if (!rawDate) return "—"; // ✅ fallback safe
-
-    const safeDate =
-      rawDate.length === 10
-        ? new Date(rawDate + "T00:00:00")
-        : new Date(rawDate);
-
-    return isNaN(safeDate.getTime())
-      ? "—"
-      : format(safeDate, "MMM d, yyyy");
-  })()}
-</p>
-
-      <p className="text-xs text-gray-500 capitalize">
-  {expense.category}
-</p>
-
-
-      {expense.is_paid && (
-  <span className="inline-block px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">
-    Paid
-  </span>
-)}
-    </div>
-  </div>
-
-  <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-6 w-full sm:w-auto">
-    {expense.document_url && (
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() =>
-            setPreviewUrl(
-              withApiBase(expense.document_url)
-            )
-          }
-          className="p-2 rounded hover:bg-gray-100"
-        >
-          <Eye className="w-5 h-5" />
-        </button>
-
-        <a
-          href={withApiBase(expense.document_url)}
-          download
-          className="p-2 rounded hover:bg-gray-100"
-        >
-          <Download className="w-5 h-5" />
-        </a>
-        
-      </div>
-    )}
-    <button
-  disabled={expense.is_paid}
-  onClick={() => handleEdit(expense)}
-  className={`p-2 rounded ${
-    expense.is_paid ? "opacity-40 cursor-not-allowed" : "hover:bg-gray-100"
-  }`}
->
-  <Pencil className="w-4 h-4" />
-</button>
-
-<button
-  disabled={expense.is_paid}
-  onClick={() => {
-    if (confirm("Delete this expense?")) {
-      deleteExpense(expense.id);
-    }
-  }}
-  className={`p-2 rounded text-red-600 ${
-    expense.is_paid ? "opacity-40 cursor-not-allowed" : "hover:bg-gray-100"
-  }`}
->
-  <Trash2 className="w-4 h-4" />
-</button>
-
-    <div className="text-right">
-      <p className="font-bold text-base sm:text-lg text-red-600">
-        -₹{expense.amount}
-      </p>
-      <p className="text-xs text-muted-foreground uppercase">
-        {expense.payment_method}
-      </p>
-    </div>
-  </div>
-</CardContent>
-              </Card>
-            ))}
-
-            {expenses?.length === 0 && (
-              <div className="text-center py-12 text-muted-foreground">
-                No expenses recorded.
-              </div>
-            )}
-          </div>
-        )}
-        <Dialog open={!!previewUrl} onOpenChange={() => setPreviewUrl(null)}>
-  <DialogContent className="max-w-lg">
-    <DialogHeader>
-      <DialogTitle>Bill Preview</DialogTitle>
-    </DialogHeader>
-
-    {previewUrl && (
-      <img
-        src={previewUrl}
-        className="w-full h-auto rounded"
-      />
-    )}
-  </DialogContent>
-</Dialog>
-<Dialog
-  open={open}
-  onOpenChange={(val) => {
-    setOpen(val);
-    if (!val) {
-      setEditingExpense(null);
-      form.reset({
-        description: "",
-        amount: 0,
-        category: "supplies",
-        paymentMode: "online",
-        vendorId: "",
-        utilityType: "",
-        isPaid: false,
-        staff_id: "",
-        date: new Date().toISOString().slice(0, 10), // ✅ FIX
-      });
-      setPartnerId(null);
-    }
-  }}
-></Dialog>
+        </div>
       </main>
+
+      {/* ══════════════ ADD / EDIT DIALOG ══════════════ */}
+      <Dialog
+        open={open}
+        onOpenChange={(val) => {
+          setOpen(val);
+          if (!val) resetDialog();
+        }}
+      >
+        <DialogContent className="max-w-lg w-full max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingExpense ? "Edit Expense" : "Record New Expense"}</DialogTitle>
+            <DialogDescription>
+              {editingExpense ? "Update the expense details below." : "Fill in the details or scan a bill to auto-fill."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Scan bill */}
+          <input
+            ref={scanInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleScanBill(file);
+              e.target.value = "";
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full border-dashed border-2 text-primary hover:bg-primary/5 gap-2"
+            disabled={isScanning}
+            onClick={() => scanInputRef.current?.click()}
+          >
+            {isScanning
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Scanning bill…</>
+              : <><ScanLine className="w-4 h-4" /> Scan Bill (auto-fill)</>
+            }
+          </Button>
+
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+
+              {/* Description */}
+              <FormField control={form.control} name="description" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description</FormLabel>
+                  <FormControl><Input placeholder="e.g. Chicken stock, Electricity bill…" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              {/* Amount + Date */}
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="amount" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Amount</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        disabled={paymentMode === "cash" && deductFromGalla}
+                        {...field}
+                        onChange={(e) => field.onChange(Number(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="date" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Date</FormLabel>
+                    <FormControl>
+                      <Input type="date" max={new Date().toISOString().slice(0, 10)} {...field} />
+                    </FormControl>
+                  </FormItem>
+                )} />
+              </div>
+
+              {/* Category + conditional sub-field */}
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="category" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Category</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="supplies">Supplies</SelectItem>
+                        <SelectItem value="salary">Salary</SelectItem>
+                        <SelectItem value="utility">Utility</SelectItem>
+                        <SelectItem value="miscellaneous">Miscellaneous</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                {selectedCategory === "supplies" && (
+                  <FormField control={form.control} name="vendorId" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Vendor</FormLabel>
+                      <Select value={String(field.value)} onValueChange={field.onChange}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select vendor" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {vendorsList.map((v: any) => (
+                            <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )} />
+                )}
+                {selectedCategory === "salary" && (
+                  <FormField control={form.control} name="staff_id" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Staff Member</FormLabel>
+                      <Select value={String(field.value || "")} onValueChange={field.onChange}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select staff" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {staff?.map((s: any) => (
+                            <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )} />
+                )}
+                {selectedCategory === "utility" && (
+                  <FormField control={form.control} name="utilityType" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Utility Type</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          <SelectItem value="rent">Rent</SelectItem>
+                          <SelectItem value="electricity">Electricity</SelectItem>
+                          <SelectItem value="water">Water</SelectItem>
+                          <SelectItem value="internet">Internet</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )} />
+                )}
+              </div>
+
+              {/* Payment Mode + Paid By */}
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="paymentMode" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Payment Mode</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Select mode" /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="online">Online</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                {partners && partners.length > 0 && paymentMode === "cash" && !deductFromGalla && (
+                  <div>
+                    <label className="text-sm font-medium">Paid By</label>
+                    <Select
+                      value={partnerId ? String(partnerId) : "staff"}
+                      onValueChange={(value) => setPartnerId(value === "staff" ? null : Number(value))}
+                    >
+                      <SelectTrigger className="mt-1.5">
+                        <SelectValue placeholder="Select payer" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {partners.map((p: any) => (
+                          <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+
+              {/* Mark as paid + Deduct from galla */}
+              <div className="flex flex-col gap-3 bg-muted/30 rounded-xl p-3">
+                <FormField control={form.control} name="isPaid" render={({ field }) => {
+                  const forced = paymentMode === "cash" && deductFromGalla;
+                  if (forced && !field.value) field.onChange(true);
+                  return (
+                    <FormItem className="flex items-center gap-2.5 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={forced ? true : field.value}
+                          disabled={forced}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <FormLabel className="font-medium cursor-pointer">
+                        Mark as Paid
+                        {forced && <span className="text-xs text-emerald-600 ml-2">(Auto — Galla)</span>}
+                      </FormLabel>
+                    </FormItem>
+                  );
+                }} />
+
+                {paymentMode === "cash" && (
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox
+                      checked={deductFromGalla}
+                      onCheckedChange={(v) => setDeductFromGalla(!!v)}
+                    />
+                    <label className="text-sm font-medium cursor-pointer">Deduct from Galla (cash drawer)</label>
+                  </div>
+                )}
+              </div>
+
+              {paymentMode === "cash" && deductFromGalla && (
+                <DenominationSelector
+                  breakdown={selectedNotes}
+                  setBreakdown={setSelectedNotes}
+                  title="Cash Used"
+                />
+              )}
+
+              {/* Bill upload */}
+              <div>
+                <label className="block text-sm font-medium mb-1.5">
+                  Upload Bill <span className="text-muted-foreground font-normal">(photo or image)</span>
+                </label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={async (e) => {
+                    if (!e.target.files?.length) return;
+                    const file = e.target.files[0];
+                    try {
+                      const url = await uploadImage(file);
+                      setUploadedUrl(url);
+                    } catch { /* silent */ }
+                  }}
+                />
+                {uploadedUrl && (
+                  <img src={withUploads(uploadedUrl)} className="mt-3 w-20 h-20 object-cover rounded-lg border" />
+                )}
+              </div>
+
+              <Button type="submit" className="w-full" disabled={isPending}>
+                {isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving…</> : (editingExpense ? "Update Expense" : "Record Expense")}
+              </Button>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Bill preview ── */}
+      <Dialog open={!!previewUrl} onOpenChange={() => setPreviewUrl(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Bill Preview</DialogTitle>
+          </DialogHeader>
+          {previewUrl && <img src={previewUrl} className="w-full h-auto rounded-xl" />}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete confirmation ── */}
+      <Dialog open={deleteTarget !== null} onOpenChange={(v) => { if (!v) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-500" />
+              </div>
+              <DialogTitle>Delete Expense?</DialogTitle>
+            </div>
+            <DialogDescription>
+              This expense will be permanently deleted and cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              className="flex-1"
+              onClick={() => {
+                if (deleteTarget !== null) deleteExpense(deleteTarget);
+                setDeleteTarget(null);
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

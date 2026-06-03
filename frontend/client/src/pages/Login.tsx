@@ -1,150 +1,165 @@
 import { useState } from "react";
-import { Building2, User, Lock, ArrowRight } from "lucide-react";
+import { Store, User, Lock, ArrowRight, Eye, EyeOff, Shield } from "lucide-react";
 import { useLogin } from "@/hooks/use-auth";
-import { useEffect } from "react";
 
 export default function Login() {
-const [email, setEmail] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [restaurantUid, setRestaurantUid] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const { mutate: login } = useLogin();
+  const { mutate: login, isPending } = useLogin();
 
-//   useEffect(() => {
-//   const saved = localStorage.getItem("restaurantUid");
-//   if (saved) setrestaurantUid(saved);
-// }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setError("");
-
-  if (!email.trim() || !password.trim() || !restaurantUid.trim()) {
-    setError("All fields are required.");
-    return;
-  }
-
-  setLoading(true);
-
-  login(
-    {
-      restaurantUid,
-      email: email,
-      password
-    },
-    {
-      onError: (err: any) => {
-        setError(err.message || "Login failed");
-        setLoading(false);
-      },
-      onSuccess: () => {
-        setLoading(false);
-        localStorage.setItem("restaurantUid", restaurantUid);
-      }
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!email.trim() || !password.trim() || !restaurantUid.trim()) {
+      setError("All fields are required.");
+      return;
     }
-  );
-};
+    login(
+      { restaurantUid, email, password },
+      {
+        onError: (err: unknown) => {
+          setError(err instanceof Error ? err.message : "Login failed");
+        },
+        onSuccess: () => {
+          localStorage.setItem("restaurantUid", restaurantUid);
+        },
+      }
+    );
+  };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-blue-50 p-4">
-      <div className="w-full max-w-md">
-        {/* Header */}
-        <div className="flex flex-col items-center mb-10">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-violet-600 flex items-center justify-center mb-5 shadow-lg shadow-violet-500/20">
-            <Building2 className="w-7 h-7 text-white" strokeWidth={1.5} />
+    <div className="min-h-screen w-full flex bg-background">
+      {/* Left decorative panel */}
+      <div className="hidden lg:flex flex-col justify-between w-[420px] bg-sidebar p-10 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-md">
+            <Store className="w-4.5 h-4.5 text-white" />
           </div>
-          <h1 className="text-3xl font-semibold text-gray-900">Welcome</h1>
-          <p className="mt-1.5 text-sm text-gray-600">Sign in to your Business terminal</p>
+          <span className="text-white text-base font-bold tracking-tight">KangPOS</span>
         </div>
 
-        {/* Form Card */}
-        <div className="bg-white rounded-2xl shadow-lg shadow-gray-100/50 border border-gray-100 p-8">
-          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-            {/* Restaurant ID */}
-            <div className="flex flex-col gap-2">
-              <label htmlFor="restaurantUid" className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                UID
+        <div>
+          <div className="w-14 h-14 rounded-2xl bg-primary/15 border border-primary/25 flex items-center justify-center mb-6">
+            <Shield className="w-7 h-7 text-primary" />
+          </div>
+          <h2 className="text-2xl font-bold text-white leading-tight mb-3">
+            Secure Business<br />Management
+          </h2>
+          <p className="text-sidebar-foreground/50 text-sm leading-relaxed">
+            Your all-in-one point of sale and business operations platform — built for speed, reliability, and control.
+          </p>
+          <div className="mt-8 space-y-3">
+            {[
+              "Real-time sales & reporting",
+              "Multi-role staff management",
+              "Inventory & vendor tracking",
+              "Payroll & attendance control",
+            ].map((feat) => (
+              <div key={feat} className="flex items-center gap-3">
+                <div className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
+                <span className="text-sidebar-foreground/55 text-sm">{feat}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <p className="text-sidebar-foreground/28 text-xs">© 2025 KangPOS. All rights reserved.</p>
+      </div>
+
+      {/* Right login panel */}
+      <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
+        <div className="w-full max-w-[380px]">
+          <div className="flex items-center gap-3 mb-8 lg:hidden">
+            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
+              <Store className="w-4.5 h-4.5 text-white" />
+            </div>
+            <span className="text-foreground text-base font-bold tracking-tight">KangPOS</span>
+          </div>
+
+          <div className="mb-8">
+            <h1 className="text-2xl font-bold text-foreground">Sign in</h1>
+            <p className="text-muted-foreground text-sm mt-1.5">Enter your credentials to access the terminal</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+                Business UID
               </label>
               <div className="relative">
-                <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Store className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 <input
                   autoFocus
-                  id="restaurantUid"
                   type="text"
                   value={restaurantUid}
                   onChange={(e) => setRestaurantUid(e.target.value)}
-                  placeholder="REST-001"
+                  placeholder="e.g. REST-001"
                   autoComplete="organization"
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 hover:bg-white hover:border-gray-300 pl-10 pr-4 py-3 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-0 focus:border-transparent focus:bg-white transition duration-150"
+                  className="w-full h-10 rounded-lg border border-border bg-card pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition"
                 />
               </div>
             </div>
 
-            {/* email */}
-            <div className="flex flex-col gap-2">
-              <label htmlFor="username" className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                email
+            <div>
+              <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+                Email
               </label>
               <div className="relative">
-                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 <input
-                  id="username"
-                  type="text"
+                  type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Enter your email"
+                  placeholder="you@example.com"
                   autoComplete="email"
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 hover:bg-white hover:border-gray-300 pl-10 pr-4 py-3 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-0 focus:border-transparent focus:bg-white transition duration-150"
+                  className="w-full h-10 rounded-lg border border-border bg-card pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition"
                 />
               </div>
             </div>
 
-            {/* Password */}
-            <div className="flex flex-col gap-2">
-              <label htmlFor="password" className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+            <div>
+              <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 <input
-                  id="password"
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   autoComplete="current-password"
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 hover:bg-white hover:border-gray-300 pl-10 pr-12 py-3 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-0 focus:border-transparent focus:bg-white transition duration-150"
+                  className="w-full h-10 rounded-lg border border-border bg-card pl-10 pr-11 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-500 hover:text-gray-700 transition duration-150"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   tabIndex={-1}
                 >
-                  {showPassword ? "Hide" : "Show"}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
 
-            {/* Error Message */}
             {error && (
-              <div className="flex items-start gap-3 p-3.5 rounded-xl bg-red-50 border border-red-200">
-                <div className="mt-0.5 w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
-                <p className="text-xs text-red-700 font-medium">{error}</p>
+              <div className="flex items-center gap-2.5 p-3 rounded-lg bg-destructive/8 border border-destructive/20">
+                <div className="w-1.5 h-1.5 rounded-full bg-destructive flex-shrink-0" />
+                <p className="text-xs text-destructive font-medium">{error}</p>
               </div>
             )}
 
-            {/* Sign In Button */}
             <button
               type="submit"
-              disabled={loading}
-              className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-violet-600 hover:from-violet-600 hover:to-violet-700 active:from-violet-700 active:to-violet-800 text-white font-semibold text-sm py-3 transition duration-150 disabled:opacity-60 disabled:cursor-not-allowed shadow-md shadow-violet-500/30 hover:shadow-lg hover:shadow-violet-500/40"
+              disabled={isPending}
+              className="w-full h-10 flex items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold transition hover:opacity-90 active:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-primary/25 mt-2"
             >
-              {loading ? (
+              {isPending ? (
                 <>
-                  <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                  <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
                   Signing in...
                 </>
               ) : (
@@ -155,12 +170,12 @@ const [email, setEmail] = useState("");
               )}
             </button>
           </form>
-        </div>
 
-        {/* Footer */}
-        <p className="mt-6 text-center text-xs text-gray-600">
-          Need help? <span className="text-violet-600 font-medium cursor-pointer hover:text-violet-700">Contact support</span>
-        </p>
+          <p className="mt-6 text-center text-xs text-muted-foreground">
+            Need access?{" "}
+            <span className="text-primary font-medium cursor-pointer hover:underline">Contact your administrator</span>
+          </p>
+        </div>
       </div>
     </div>
   );

@@ -1,262 +1,195 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { get, post, put, del } from "@/lib/api";
+import { toastPromise, toastError } from "@/hooks/use-toast";
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
+// ================= TYPES =================
 
-/* ===============================
-   GET MENU ITEMS
-================================ */
+export interface MenuItem {
+  id: number;
+  name: string;
+  price: number;
+
+  category_id: number | null;
+  category_name?: string;
+  category_color?: string;
+
+  usage_count?: number;
+  is_weight_based?: boolean;
+
+  image_url?: string;
+  is_active?: boolean;
+  barcode?: string | null;
+}
+
+interface MenuPayload {
+  name: string;
+  price: number;
+
+  category_id?: number;
+  is_weight_based?: boolean;
+  barcode?: string | null;
+}
+
+// ================= HELPERS =================
+
+const generateIdempotencyKey = () =>
+  `menu_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+// ================= GET MENU =================
+
 export function useMenu() {
   return useQuery({
     queryKey: ["menu"],
+
     queryFn: async () => {
+      const data = await get<MenuItem[]>("/menu");
 
-      const token = localStorage.getItem("token");
-
-      const res = await fetch(`${API_BASE}/menu`, {
-        headers: {
-          Authorization: `Bearer ${token || ""}`,
-        },
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to fetch menu");
-      }
-
-      const data = await res.json();
-
-      return data.map((item: any) => ({
+      return data.map((item) => ({
         ...item,
         price: Number(item.price),
       }));
     },
+
+    staleTime: 1000 * 60,
   });
 }
 
+// ================= CREATE =================
 
-/* ===============================
-   CREATE MENU ITEM
-================================ */
 export function useCreateMenuItem() {
-
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async (payload: any) => {
-
-      const token = localStorage.getItem("token");
-
-      const res = await fetch(`${API_BASE}/menu`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token || ""}`,
-        },
-        body: JSON.stringify(payload),
+    mutationFn: async (payload: MenuPayload) => {
+      const promise = post("/menu", {
+        ...payload,
+        idempotencyKey: generateIdempotencyKey(),
       });
 
-      if (!res.ok) {
-        throw new Error("Failed to create menu item");
-      }
-
-      return res.json();
+      return toastPromise(promise, {
+        loading: "Creating item...",
+        success: "Menu item created",
+        error: (err) => err?.message || "Failed to create item",
+      });
     },
 
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["menu"] });
-queryClient.refetchQueries({ queryKey: ["menu"] });
+      qc.invalidateQueries({ queryKey: ["menu"] });
+    },
+
+    onError: () => {
+      toastError("Unable to create menu item");
     },
   });
 }
 
-/* ===============================
-   UPDATE MENU ITEM
-================================ */
+// ================= UPDATE =================
+
 export function useUpdateMenuItem() {
-
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, ...payload }: any) => {
+    mutationFn: async ({
+      id,
+      ...payload
+    }: MenuPayload & {
+      id: number;
+      is_active?: boolean;
+    }) => {
+      const promise = put(`/menu/${id}`, payload);
 
-      const token = localStorage.getItem("token");
-
-      const res = await fetch(`${API_BASE}/menu/${id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token || ""}`,
-        },
-        body: JSON.stringify(payload),
+      return toastPromise(promise, {
+        loading: "Updating item...",
+        success: "Menu item updated",
+        error: (err) => err?.message || "Update failed",
       });
-
-      if (!res.ok) {
-        throw new Error("Failed to update menu item");
-      }
-
-      return res.json();
     },
 
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["menu"] });
-queryClient.refetchQueries({ queryKey: ["menu"] });
+      qc.invalidateQueries({ queryKey: ["menu"] });
+    },
+
+    onError: () => {
+      toastError("Unable to update item");
     },
   });
 }
 
-/* ===============================
-   DELETE MENU ITEM
-================================ */
-export function useDeleteMenuItem() {
+// ================= DELETE (DISABLE) =================
 
-  const queryClient = useQueryClient();
+export function useDisableMenuItem() {
+  const qc = useQueryClient();
 
   return useMutation({
     mutationFn: async (id: number) => {
+      const promise = del(`/menu/${id}`);
 
-      const token = localStorage.getItem("token");
-
-      const res = await fetch(`${API_BASE}/menu/${id}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token || ""}`,
-        },
+      return toastPromise(promise, {
+        loading: "Disabling item...",
+        success: "Menu item disabled",
+        error: (err) => err?.message || "Disable failed",
       });
-
-      if (!res.ok) {
-        throw new Error("Failed to delete menu item");
-      }
-
-      return res.json();
     },
 
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["menu"] });
-queryClient.refetchQueries({ queryKey: ["menu"] });
+      qc.invalidateQueries({ queryKey: ["menu"] });
+    },
+
+    onError: () => {
+      toastError("Unable to disable item");
     },
   });
 }
 
-/* ===============================
-   GET MENU CATEGORIES
-================================ */
-export function useMenuCategories() {
-  return useQuery({
-    queryKey: ["menu-categories"],
-    queryFn: async () => {
+// ================= IMAGE UPLOAD =================
 
-      const token = localStorage.getItem("token");
+export function useUploadMenuImage() {
+  return async (id: number, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
 
-      const res = await fetch(`${API_BASE}/menu/categories`, {
-        headers: {
-          Authorization: `Bearer ${token || ""}`,
-        },
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to fetch categories");
-      }
-
-      return res.json();
-    },
-  });
-}
-
-/* ===============================
-   CREATE CATEGORY
-================================ */
-export function useCreateCategory() {
-
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (payload: any) => {
-
-      const token = localStorage.getItem("token");
-
-      const res = await fetch(`${API_BASE}/menu/categories`, {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/menu/${id}/image`,
+      {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token || ""}`,
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to create category");
+        body: formData,
       }
+    );
 
-      return res.json();
-    },
+    if (!res.ok) {
+      throw new Error("Upload failed");
+    }
 
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
-    },
-  });
+    const data = await res.json();
+    return data;
+  };
 }
 
-/* ===============================
-   UPDATE CATEGORY
-================================ */
-export function useUpdateCategory() {
-
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ id, ...payload }: any) => {
-
-      const token = localStorage.getItem("token");
-
-      const res = await fetch(`${API_BASE}/menu/categories/${id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token || ""}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to update category");
-      }
-
-      return res.json();
-    },
-
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
-    },
-  });
-}
-
-/* ===============================
-   DELETE CATEGORY
-================================ */
-export function useDeleteCategory() {
-
-  const queryClient = useQueryClient();
-
+export function useDeleteMenuImage() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: number) => {
-
-      const token = localStorage.getItem("token");
-
-      const res = await fetch(`${API_BASE}/menu/categories/${id}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token || ""}`,
-        },
+      const promise = del(`/menu/${id}/image`);
+      return toastPromise(promise, {
+        loading: "Removing image...",
+        success: "Image removed",
+        error: (err) => err?.message || "Remove failed",
       });
-
-      if (!res.ok) {
-        throw new Error("Failed to delete category");
-      }
-
-      return res.json();
     },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["menu"] }),
+    onError: () => toastError("Unable to remove image"),
+  });
+}
 
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
-    },
+export function useMenuItemByBarcode(barcode: string | null) {
+  return useQuery({
+    queryKey: ["menu-barcode", barcode],
+    queryFn: () => get<MenuItem>(`/menu/barcode/${barcode}`),
+    enabled: !!barcode,
+    staleTime: 1000 * 60 * 5,
+    retry: false,
   });
 }

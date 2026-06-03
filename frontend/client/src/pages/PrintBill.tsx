@@ -2,11 +2,13 @@ import { useEffect } from "react";
 import { useParams } from "wouter";
 import { useOrderByBillNumber } from "@/hooks/use-orders";
 import { useRestaurantInfo } from "@/hooks/use-restaurant";
+import { useCurrency } from "@/hooks/use-currency";
 
 export default function PrintBill() {
   const { billNumber } = useParams();
   const { data: order, isLoading } = useOrderByBillNumber(billNumber);
   const { data: restaurant } = useRestaurantInfo();
+  const { format } = useCurrency();
 
   useEffect(() => {
     if (order && restaurant) {
@@ -18,8 +20,6 @@ export default function PrintBill() {
   }, [order, restaurant]);
 
   if (isLoading || !order || !restaurant) return null;
-
-  const currency = restaurant.currency || "₹";
 
   return (
     <div className="p-4 text-sm font-mono w-[80mm]">
@@ -69,7 +69,7 @@ export default function PrintBill() {
               </span>
 
               <span className="w-[20%] text-right">
-                {currency}{price}
+                {format(price)}
               </span>
 
               <span className="w-[15%] text-right">
@@ -77,7 +77,7 @@ export default function PrintBill() {
               </span>
 
               <span className="w-[25%] text-right">
-                {currency}{lineTotal}
+                {format(lineTotal)}
               </span>
 
             </div>
@@ -91,7 +91,7 @@ export default function PrintBill() {
       {/* TOTAL */}
       <div className="flex justify-between font-bold">
         <span>Total</span>
-        <span>{currency}{order.total}</span>
+        <span>{format(order.total)}</span>
       </div>
 
       {/* FOOTER */}

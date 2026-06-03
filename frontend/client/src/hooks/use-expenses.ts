@@ -1,150 +1,201 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useToast } from "@/hooks/use-toast";
+import { get, post, put, del } from "@/lib/api";
+import { toastPromise, toastError } from "@/hooks/use-toast";
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
-function getAuthHeaders() {
-  const token = localStorage.getItem("token");
-  return {
-    "Content-Type": "application/json",
-    ...(token && { Authorization: `Bearer ${token}` }),
-  };
+// ================= TYPES =================
+
+interface Expense {
+  id: number;
+  amount: number;
+  category: string;
+  payment_method: "cash" | "online" | "card";
+  is_paid: boolean;
+  created_at: string;
 }
 
-export function useExpenses() {
+interface ExpensePayload {
+  amount: number;
+  category: string;
+
+  // 🔥 FIXED naming
+  paymentMode: "cash" | "online" | "card";
+
+  vendorId?: number;
+  staff_id?: number;
+  description?: string;
+
+  is_paid?: boolean;
+  deduct_from_galla?: boolean;
+
+  denominations?: Record<number, number>; // 🔥 backend format
+  partnerId?: number | null;
+
+  date?: string;
+  businessDayId?: number;
+}
+
+// ================= HELPERS =================
+
+const generateIdempotencyKey = () =>
+  `exp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+// ================= GET EXPENSES =================
+
+export function useExpenses(useBusinessDay: boolean, businessDayId?: number) {
   return useQuery({
-    queryKey: ["expenses"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/expenses`, {
-        headers: getAuthHeaders(),
-      });
+    queryKey: ["expenses", useBusinessDay, businessDayId],
 
-      if (!res.ok) throw new Error("Failed to fetch expenses");
+    enabled: useBusinessDay ? !!businessDayId : true,
 
-      return await res.json();
-    },
+    queryFn: () =>
+      get<Expense[]>("/expenses", {
+        params: useBusinessDay ? { businessDayId } : {},
+      }),
+
+    staleTime: 1000 * 30,
   });
 }
 
-export function useCreateExpense() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
+// ================= CREATE =================
+
+export function useCreateExpense(useBusinessDay: boolean) {
+  const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async (expense: any) => {
-      const res = await fetch(`${API_BASE}/expenses`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(expense),
+    mutationFn: async (expense: ExpensePayload) => {
+      // 🔥 VALIDATION (frontend safety)
+      if (expense.category === "supplies" && !expense.vendorId) {
+        throw new Error("Vendor required for supplies");
+      }
+
+      if (expense.category === "salary" && !expense.staff_id) {
+        throw new Error("Staff required for salary");
+      }
+
+      const payload = {
+        ...expense,
+        businessDayId: useBusinessDay ? expense.businessDayId : undefined,
+        idempotencyKey: generateIdempotencyKey(),
+      };
+
+      const promise = post("/expenses", payload);
+
+      return toastPromise(promise, {
+        loading: "Recording expense...",
+        success: "Expense recorded",
+        error: (err) => err?.message || "Failed to record expense",
       });
-
-      if (!res.ok) throw new Error("Failed to create expense");
-
-      return await res.json();
     },
+
     onSuccess: () => {
-
-      queryClient.invalidateQueries({ queryKey: ["expenses"] });
-      queryClient.invalidateQueries({ queryKey: ["staff-balance"] });
-      queryClient.invalidateQueries({ queryKey: ["staff-history"] });
-  queryClient.invalidateQueries({ queryKey: ["staff-summary"] });
-  queryClient.invalidateQueries({ queryKey: ["vendors-summary"] });
-      toast({
-        title: "Success",
-        description: "Expense recorded successfully",
-      });
+      // 🔥 FULL SYSTEM SYNC
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+      qc.invalidateQueries({ queryKey: ["current-cash"] });
+      qc.invalidateQueries({ queryKey: ["expected-cash"] });
+      qc.invalidateQueries({ queryKey: ["vendors-summary"] });
+      qc.invalidateQueries({ queryKey: ["staff-summary"] });
+      qc.invalidateQueries({ queryKey: ["bank-balance"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
+      qc.invalidateQueries({ queryKey: ["business-day"] });
     },
+
     onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to record expense",
-        variant: "destructive",
-      });
+      toastError("Unable to record expense");
     },
   });
 }
 
-export function useUploadExpenseImage() {
-  const { toast } = useToast();
+// ================= UPDATE =================
 
+export function useUpdateExpense(useBusinessDay: boolean) {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      id,
+      ...expense
+    }: ExpensePayload & { id: number }) => {
+      const payload = {
+        ...expense,
+        businessDayId: useBusinessDay ? expense.businessDayId : undefined,
+        idempotencyKey: generateIdempotencyKey(),
+      };
+
+      const promise = put(`/expenses/${id}`, payload);
+
+      return toastPromise(promise, {
+        loading: "Updating expense...",
+        success: "Expense updated",
+        error: (err) => err?.message || "Update failed",
+      });
+    },
+
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+      qc.invalidateQueries({ queryKey: ["current-cash"] });
+      qc.invalidateQueries({ queryKey: ["vendors-summary"] });
+      qc.invalidateQueries({ queryKey: ["bank-balance"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
+    },
+
+    onError: () => {
+      toastError("Unable to update expense");
+    },
+  });
+}
+
+// ================= DELETE =================
+
+export function useDeleteExpense() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const promise = del(`/expenses/${id}`);
+
+      return toastPromise(promise, {
+        loading: "Deleting expense...",
+        success: "Expense deleted",
+        error: (err) => err?.message || "Delete failed",
+      });
+    },
+
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+      qc.invalidateQueries({ queryKey: ["current-cash"] });
+      qc.invalidateQueries({ queryKey: ["vendors-summary"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
+    },
+
+    onError: () => {
+      toastError("Unable to delete expense");
+    },
+  });
+}
+
+// ================= UPLOAD =================
+
+export function useUploadExpenseImage() {
   return async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
 
-    const res = await fetch(`${API_BASE}/expenses/upload`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      },
-      body: formData,
-    });
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/expenses/upload`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: formData,
+      }
+    );
 
     if (!res.ok) {
-      toast({
-        title: "Upload Failed",
-        variant: "destructive",
-      });
       throw new Error("Upload failed");
     }
 
     const data = await res.json();
     return data.url;
   };
-}
-
-export function useUpdateExpense() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-
-  return useMutation({
-    mutationFn: async ({ id, ...expense }: any) => {
-      const res = await fetch(`${API_BASE}/expenses/${id}`, {
-        method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(expense),
-      });
-
-      const data = await res.json(); // ✅ always read
-
-      if (!res.ok) {
-        console.error("UPDATE ERROR:", data); // 🔥 IMPORTANT
-        throw new Error(data.message || "Update failed");
-      }
-
-      return data;
-    },
-
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["expenses"] });
-      queryClient.invalidateQueries({ queryKey: ["vendors-summary"] });
-      toast({ title: "Expense updated" });
-    },
-
-    onError: (err: any) => {
-      toast({
-        title: "Error",
-        description: err.message || "Update failed",
-        variant: "destructive",
-      });
-    },
-  });
-}
-export function useDeleteExpense() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-
-  return useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`${API_BASE}/expenses/${id}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-      });
-
-      if (!res.ok) throw new Error("Delete failed");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["expenses"] });
-      queryClient.invalidateQueries({ queryKey: ["vendors-summary"] });
-      toast({ title: "Expense deleted" });
-    },
-  });
 }

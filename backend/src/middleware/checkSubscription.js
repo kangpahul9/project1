@@ -1,4 +1,5 @@
 import pool from "../config/db.js";
+import logger from "../utils/logger.js";
 
 export const checkSubscription = async (req, res, next) => {
   try {
@@ -11,32 +12,36 @@ export const checkSubscription = async (req, res, next) => {
       [req.restaurantId]
     );
 
-    const sub = result.rows[0];
-
-    // If no subscription record → block
-    if (!sub) {
+    if (result.rows.length === 0) {
       return res.status(403).json({
-        message: "Please recharge to continue",
+        message: "Subscription not found",
       });
     }
 
+    const sub = result.rows[0];
     const now = new Date();
 
-    // ❌ expired
-    if (
-      sub.subscription_status !== "active" ||
-      (sub.subscription_valid_till &&
-        new Date(sub.subscription_valid_till) < now)
-    ) {
+    if (sub.subscription_status !== "active") {
       return res.status(403).json({
-        message: "Subscription expired. Please recharge.",
+        message: "Subscription inactive",
       });
     }
 
-    // ✅ allowed
+    if (
+      sub.subscription_valid_till &&
+      new Date(sub.subscription_valid_till) < now
+    ) {
+      return res.status(403).json({
+        message: "Subscription expired",
+      });
+    }
+
     next();
   } catch (err) {
-    console.error("Subscription check error:", err);
-    res.status(500).json({ message: "Subscription check failed" });
+    logger.error({ err }, "Subscription check error");
+
+    res.status(500).json({
+      message: "Subscription check failed",
+    });
   }
 };

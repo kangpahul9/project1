@@ -86,3 +86,27 @@ WHERE restaurant_id IS NULL;
 UPDATE order_payments   
 SET restaurant_id = 1
 WHERE restaurant_id IS NULL;
+
+INSERT INTO pay_types (restaurant_id, name, rate_multiplier)
+SELECT id, 'Weekday', 1.0 FROM restaurants
+ON CONFLICT DO NOTHING;
+
+INSERT INTO pay_types (restaurant_id, name, rate_multiplier)
+SELECT id, 'Saturday', 1.25 FROM restaurants
+ON CONFLICT DO NOTHING;
+
+INSERT INTO pay_types (restaurant_id, name, rate_multiplier)
+SELECT id, 'Sunday', 1.5 FROM restaurants
+ON CONFLICT DO NOTHING;
+
+INSERT INTO pay_types (restaurant_id, name, rate_multiplier)
+SELECT id, 'Public Holiday', 2.0 FROM restaurants
+ON CONFLICT DO NOTHING;
+
+INSERT INTO pay_types (restaurant_id, name, rate_multiplier)
+VALUES 
+($1, 'Weekday', 1.0),
+($1, 'Saturday', 1.25),
+($1, 'Sunday', 1.5),
+($1, 'Public Holiday', 2.0)
+ON CONFLICT DO NOTHING;

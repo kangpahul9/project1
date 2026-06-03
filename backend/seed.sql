@@ -1,112 +1,70 @@
--- =========================================
--- USERS
--- =========================================
+-- KangPOS seed — run once on a fresh schema
+-- psql ... -f seed.sql
 
--- Admin (PIN: 0905)
-INSERT INTO users (name, role, pin)
-VALUES ('Admin', 'ADMIN', '0905')
+BEGIN;
+
+-- Need pgcrypto for bcrypt password hashing
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- ================================================================
+-- RESTAURANT
+-- uid is the code users type on the login screen
+-- ================================================================
+INSERT INTO restaurants (restaurant_uid, name, currency, receipt_footer)
+VALUES ('kangpos', 'My Restaurant', '$', 'Thank you for dining with us!')
 ON CONFLICT DO NOTHING;
 
--- Seed a default vendor row if missing.
-INSERT INTO vendors (name)
-SELECT 'Unknown Vendor'
+-- ================================================================
+-- USERS
+-- Admin login: uid=kangpos  email=admin@kangpos.com  password=Admin@123
+-- Staff login: uid=kangpos  email=staff@kangpos.com  password=Staff@123
+-- Change these passwords immediately after first login.
+-- ================================================================
+INSERT INTO users (restaurant_id, name, role, email, password_hash)
+VALUES (
+  1,
+  'Admin',
+  'ADMIN',
+  'admin@kangpos.com',
+  crypt('Admin@123', gen_salt('bf', 10))
+)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO users (restaurant_id, name, role, email, password_hash)
+VALUES (
+  1,
+  'Staff',
+  'STAFF',
+  'staff@kangpos.com',
+  crypt('Staff@123', gen_salt('bf', 10))
+)
+ON CONFLICT DO NOTHING;
+
+-- ================================================================
+-- DEFAULT VENDOR
+-- ================================================================
+INSERT INTO vendors (name, restaurant_id)
+SELECT 'Unknown Vendor', 1
 WHERE NOT EXISTS (
-    SELECT 1 FROM vendors WHERE LOWER(name) = LOWER('Unknown Vendor')
+    SELECT 1 FROM vendors WHERE LOWER(name) = 'unknown vendor'
 );
 
--- Staff (PIN: 1111)
-INSERT INTO users (name, role, pin)
-VALUES ('Staff', 'STAFF', '1111')
+-- ================================================================
+-- DEFAULT SETTINGS ROW
+-- ================================================================
+INSERT INTO restaurant_settings (restaurant_id)
+VALUES (1)
 ON CONFLICT DO NOTHING;
 
-
-
--->
-UPDATE users
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-
-
-UPDATE users
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-UPDATE menu
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-UPDATE orders
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-UPDATE vendors
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-UPDATE expenses
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-UPDATE staff
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-
-UPDATE business_days
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-UPDATE cash_withdrawals
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-UPDATE cash_deposits
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-UPDATE order_items   
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-
-UPDATE denominations   
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-
-UPDATE vendor_settlements   
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-
-UPDATE cash_ledger   
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-
-UPDATE staff_transactions   
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-
-UPDATE staff_roster   
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-
-UPDATE menu_categories   
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-
-UPDATE order_payments   
-SET restaurant_id = 1
-WHERE restaurant_id IS NULL;
-
-INSERT INTO pay_types (restaurant_id, name, rate_multiplier)
-SELECT id, 'Weekday', 1.0 FROM restaurants
+-- ================================================================
+-- PAY TYPES (payroll / roster feature)
+-- ================================================================
+INSERT INTO pay_types (restaurant_id, name, multiplier)
+VALUES
+  (1, 'Weekday',        1.0),
+  (1, 'Saturday',       1.25),
+  (1, 'Sunday',         1.5),
+  (1, 'Public Holiday', 2.0)
 ON CONFLICT DO NOTHING;
 
-INSERT INTO pay_types (restaurant_id, name, rate_multiplier)
-SELECT id, 'Saturday', 1.25 FROM restaurants
-ON CONFLICT DO NOTHING;
-
-INSERT INTO pay_types (restaurant_id, name, rate_multiplier)
-SELECT id, 'Sunday', 1.5 FROM restaurants
-ON CONFLICT DO NOTHING;
-
-INSERT INTO pay_types (restaurant_id, name, rate_multiplier)
-SELECT id, 'Public Holiday', 2.0 FROM restaurants
-ON CONFLICT DO NOTHING;
-
-INSERT INTO pay_types (restaurant_id, name, rate_multiplier)
-VALUES 
-($1, 'Weekday', 1.0),
-($1, 'Saturday', 1.25),
-($1, 'Sunday', 1.5),
-($1, 'Public Holiday', 2.0)
-ON CONFLICT DO NOTHING;
+COMMIT;

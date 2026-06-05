@@ -4,7 +4,7 @@ import "dotenv/config";
 {
   const required = ["JWT_SECRET"];
   if (process.env.NODE_ENV === "production") {
-    required.push("DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME", "FRONTEND_URL");
+    required.push("DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME");
   }
   const missing = required.filter((k) => !process.env[k]);
   if (missing.length) {
@@ -148,21 +148,9 @@ app.use((req, res, next) => {
   next();
 });
 
-const allowedOrigins = (process.env.FRONTEND_URL || "")
-  .split(",")
-  .map((o) => o.trim())
-  .filter(Boolean);
-
 app.use(
   cors({
-    origin:
-      process.env.NODE_ENV === "production"
-        ? (origin, cb) => {
-            // no origin = server-to-server (webhooks etc.) — allow
-            if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-            cb(new Error("Not allowed by CORS"));
-          }
-        : true,
+    origin: true,
     credentials: true,
   })
 );

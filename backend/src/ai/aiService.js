@@ -150,8 +150,8 @@ async function runTool(name, input, restaurantId, userId) {
     }
 
     case "get_top_items": {
-      const days = input.days || 7;
-      const limit = input.limit || 10;
+      const days = Math.min(Math.max(1, Number(input.days) || 7), 365);
+      const limit = Math.min(Math.max(1, Number(input.limit) || 10), 100);
       const res = await pool.query(
         `SELECT
           oi.item_name,
@@ -195,7 +195,7 @@ async function runTool(name, input, restaurantId, userId) {
     }
 
     case "get_expenses_summary": {
-      const days = input.days || 7;
+      const days = Math.min(Math.max(1, Number(input.days) || 7), 365);
       const res = await pool.query(
         `SELECT
           category,
@@ -228,11 +228,15 @@ async function runTool(name, input, restaurantId, userId) {
       const orderId = orderRes.rows[0].id;
       const idempotencyKey = `ai_delete_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
+      if (!process.env.AI_INTERNAL_SECRET) {
+        return { success: false, error: "AI_INTERNAL_SECRET not configured" };
+      }
+
       const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/orders/${orderId}/delete`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-AI-Internal": process.env.AI_INTERNAL_SECRET || "ai-internal",
+          "X-AI-Internal": process.env.AI_INTERNAL_SECRET,
         },
         body: JSON.stringify({ idempotencyKey }),
       });

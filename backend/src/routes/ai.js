@@ -1,10 +1,19 @@
 import express from "express";
-import { authenticate } from "../middleware/authMiddleware.js";
+import rateLimit from "express-rate-limit";
+import { requireAdmin } from "../middleware/authMiddleware.js";
 import { handleAIQuery } from "../ai/aiService.js";
 
 const router = express.Router();
 
-router.post("/chat", authenticate, async (req, res, next) => {
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { error: "Too many AI requests. Try again in a minute." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.post("/chat", aiLimiter, requireAdmin, async (req, res, next) => {
   try {
     const { message } = req.body;
     const { restaurantId, userId } = req;

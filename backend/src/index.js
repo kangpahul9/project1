@@ -22,6 +22,7 @@ import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
 import cron from "node-cron";
+import jwt from "jsonwebtoken";
 
 import pool from "./config/db.js";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
@@ -148,17 +149,38 @@ app.use((req, res, next) => {
   next();
 });
 
+const ALLOWED_ORIGINS = (process.env.CLIENT_URL || "http://localhost:5173")
+  .split(",")
+  .map((u) => u.trim());
+
 app.use(
   cors({
-    origin: true,
+    origin: (origin, callback) => {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   })
 );
 
 app.use(
   helmet({
-    crossOriginResourcePolicy: false,
-  contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "same-origin" },
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "blob:"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'", "data:"],
+        objectSrc: ["'none'"],
+        frameSrc: ["'none'"],
+      },
+    },
   })
 );
 app.use(timeout("10s"));
@@ -196,9 +218,22 @@ app.use(
 );
 
 
-// serve uploads — in production nginx handles /uploads; this is a Node fallback
+// serve uploads — JWT required (Authorization header or ?token= query param)
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, "..", "uploads");
-app.use("/uploads", express.static(UPLOAD_DIR));
+app.get("/uploads/:filename", (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token =
+    (authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null) ||
+    req.query.token;
+  if (!token) return res.status(401).json({ message: "Unauthorized" });
+  try {
+    jwt.verify(token, process.env.JWT_SECRET);
+    const filename = path.basename(req.params.filename);
+    res.sendFile(path.join(UPLOAD_DIR, filename));
+  } catch {
+    return res.status(401).json({ message: "Invalid token" });
+  }
+});
 
 /* =========================
    HEALTH CHECK

@@ -544,7 +544,8 @@ await bankWithEvent(client, {
 
   } catch (err) {
     await client.query("ROLLBACK");
-    res.status(500).json({ message: err.message });
+    req.log?.error({ err }, "Staff operation failed");
+    res.status(500).json({ message: "Server error" });
   } finally {
     client.release();
   }

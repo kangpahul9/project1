@@ -18,7 +18,7 @@ const pool = new Pool({
   ssl: isProduction
     ? process.env.DB_SSL === "false"
       ? false
-      : { rejectUnauthorized: false }
+      : { rejectUnauthorized: process.env.DB_SSL_NO_VERIFY !== "true" }
     : false,
 
   max: 20,

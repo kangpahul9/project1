@@ -42,7 +42,7 @@ router.put("/currency", authenticate, requireAdmin, updateCurrency);
 // GET SYSTEM SETTINGS
 // =========================================
 router.get("/", authenticate, async (req, res) => {
-  const isAdmin = req.role === "ADMIN";
+  const isAdmin = req.user?.role === "ADMIN";
   // EFTPOS credentials are only returned to admins; all users get feature flags
   const selectCols = isAdmin
     ? "*"

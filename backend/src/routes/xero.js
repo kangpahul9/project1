@@ -1,9 +1,32 @@
 import express from "express";
+import { createHmac, timingSafeEqual } from "crypto";
 import pool from "../config/db.js";
 import { authenticate, requireAdmin } from "../middleware/authMiddleware.js";
 import logger from "../utils/logger.js";
 
 const router = express.Router();
+
+const CLIENT_ORIGIN = process.env.CLIENT_URL || "*";
+
+function signState(payload) {
+  const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const sig = createHmac("sha256", process.env.JWT_SECRET).update(data).digest("base64url");
+  return `${data}.${sig}`;
+}
+
+function verifyState(state) {
+  const lastDot = state.lastIndexOf(".");
+  if (lastDot === -1) throw new Error("Invalid state format");
+  const data = state.slice(0, lastDot);
+  const sig = state.slice(lastDot + 1);
+  const expected = createHmac("sha256", process.env.JWT_SECRET).update(data).digest("base64url");
+  const sigBuf = Buffer.from(sig);
+  const expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
+    throw new Error("Invalid state — possible CSRF attack");
+  }
+  return JSON.parse(Buffer.from(data, "base64url").toString());
+}
 
 // Ensure advance_deduction_type_id column exists (idempotent)
 pool.query(`ALTER TABLE xero_connections ADD COLUMN IF NOT EXISTS advance_deduction_type_id TEXT`)
@@ -70,8 +93,8 @@ router.get("/connect", authenticate, requireAdmin, (req, res) => {
     return res.status(503).json({ message: "Xero credentials not configured. Add XERO_CLIENT_ID and XERO_CLIENT_SECRET to .env" });
   }
 
-  // Encode restaurantId in state to retrieve after callback
-  const state = Buffer.from(JSON.stringify({ restaurantId: req.restaurantId })).toString("base64url");
+  // HMAC-signed state prevents CSRF on the OAuth callback
+  const state = signState({ restaurantId: req.restaurantId });
 
   const url = new URL("https://login.xero.com/identity/connect/authorize");
   url.searchParams.set("response_type", "code");
@@ -91,7 +114,7 @@ router.get("/callback", async (req, res) => {
     if (error) throw new Error(`Xero auth error: ${error}`);
     if (!code || !state) throw new Error("Missing code or state");
 
-    const { restaurantId } = JSON.parse(Buffer.from(state, "base64url").toString());
+    const { restaurantId } = verifyState(state);
 
     // Exchange code for tokens
     const params = new URLSearchParams({
@@ -132,11 +155,11 @@ router.get("/callback", async (req, res) => {
     );
 
     // Close popup and notify parent
-    res.send(`<script>window.opener?.postMessage({xero:'connected',tenant:${JSON.stringify(tenant.tenantName)}},'*');window.close();</script>`);
+    res.send(`<script>window.opener?.postMessage({xero:'connected',tenant:${JSON.stringify(tenant.tenantName)}},${JSON.stringify(CLIENT_ORIGIN)});window.close();</script>`);
 
   } catch (err) {
     logger.error({ err }, "Xero callback error");
-    res.send(`<script>window.opener?.postMessage({xero:'error',message:${JSON.stringify(err.message)}},'*');window.close();</script>`);
+    res.send(`<script>window.opener?.postMessage({xero:'error',message:'Xero connection failed'},${JSON.stringify(CLIENT_ORIGIN)});window.close();</script>`);
   }
 });
 

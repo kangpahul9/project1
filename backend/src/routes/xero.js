@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import pool from "../config/db.js";
 import { authenticate, requireAdmin } from "../middleware/authMiddleware.js";
 import logger from "../utils/logger.js";
+import { encrypt, decrypt } from "../utils/crypto.js";
 
 const router = express.Router();
 
@@ -44,7 +45,11 @@ async function getConnection(restaurantId) {
     `SELECT * FROM xero_connections WHERE restaurant_id=$1`,
     [restaurantId]
   );
-  return r.rows[0] || null;
+  if (!r.rows[0]) return null;
+  const conn = r.rows[0];
+  conn.access_token  = decrypt(conn.access_token);
+  conn.refresh_token = decrypt(conn.refresh_token);
+  return conn;
 }
 
 async function refreshIfNeeded(conn, restaurantId) {
@@ -81,7 +86,7 @@ async function refreshIfNeeded(conn, restaurantId) {
     `UPDATE xero_connections
      SET access_token=$1, refresh_token=$2, expires_at=$3
      WHERE restaurant_id=$4`,
-    [data.access_token, data.refresh_token, expiryTs, restaurantId]
+    [encrypt(data.access_token), encrypt(data.refresh_token), expiryTs, restaurantId]
   );
 
   return data.access_token;
@@ -151,7 +156,7 @@ router.get("/callback", async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6)
        ON CONFLICT (restaurant_id) DO UPDATE
        SET access_token=$2, refresh_token=$3, tenant_id=$4, tenant_name=$5, expires_at=$6, connected_at=NOW()`,
-      [restaurantId, tokens.access_token, tokens.refresh_token, tenant.tenantId, tenant.tenantName, expiryTs]
+      [restaurantId, encrypt(tokens.access_token), encrypt(tokens.refresh_token), tenant.tenantId, tenant.tenantName, expiryTs]
     );
 
     // Close popup and notify parent

@@ -2,6 +2,7 @@ import express from "express";
 import pool from "../config/db.js";
 import QRCode from "qrcode";
 import { authenticate, requireAdmin } from "../middleware/authMiddleware.js";
+import { encrypt, decrypt } from "../utils/crypto.js";
 
 const router = express.Router();
 
@@ -69,7 +70,13 @@ router.get("/", authenticate, async (req, res) => {
       );
     }
 
-    res.json(result.rows[0]);
+    const row = result.rows[0];
+    if (row) {
+      row.eftpos_api_key    = decrypt(row.eftpos_api_key);
+      row.eftpos_merchant_id = decrypt(row.eftpos_merchant_id);
+      row.eftpos_terminal_id = decrypt(row.eftpos_terminal_id);
+    }
+    res.json(row);
 
   } catch (err) {
     req.log.error({ err }, "GET /settings error");
@@ -172,9 +179,9 @@ router.put("/", authenticate, requireAdmin, async (req, res) => {
         payid_name?.trim() || null,
 
         eftpos_provider || null,
-        eftpos_api_key?.trim() || null,
-        eftpos_merchant_id?.trim() || null,
-        eftpos_terminal_id?.trim() || null,
+        encrypt(eftpos_api_key?.trim() || null),
+        encrypt(eftpos_merchant_id?.trim() || null),
+        encrypt(eftpos_terminal_id?.trim() || null),
 
         req.restaurantId
       ]

@@ -94,7 +94,12 @@ export function useLogout() {
   const clear = useAuthStore((s) => s.clear);
   const [, setLocation] = useLocation();
 
-  return () => {
+  return async () => {
+    try {
+      await post("/auth/logout");
+    } catch {
+      // swallow — token is cleared locally regardless
+    }
     localStorage.removeItem("token");
     clear();
     setLocation("/login");

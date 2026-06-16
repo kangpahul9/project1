@@ -385,4 +385,11 @@ ALTER TABLE partners ADD COLUMN IF NOT EXISTS share_percent NUMERIC;
 ALTER TABLE partners ADD COLUMN IF NOT EXISTS phone TEXT;
 ALTER TABLE partners ADD COLUMN IF NOT EXISTS email TEXT;
 
+-- ================================================================
+-- SECURITY — token revocation + account lockout
+-- ================================================================
+ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INT NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_count INT NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP;
+
 COMMIT;

@@ -244,7 +244,10 @@ router.post("/", authenticate, requireAdmin, async (req, res) => {
 
   } catch (err) {
     await client.query("ROLLBACK");
-    res.status(400).json({ message: err.message });
+    const isDbError = err.code && /^[0-9A-Z]{5}$/.test(err.code);
+    res.status(isDbError ? 500 : 400).json({
+      message: isDbError ? "Server error" : err.message,
+    });
   } finally {
     client.release();
   }
@@ -442,7 +445,10 @@ router.post("/deposit", authenticate, requireAdmin, async (req, res) => {
 
   } catch (err) {
     await client.query("ROLLBACK");
-    res.status(400).json({ message: err.message });
+    const isDbError = err.code && /^[0-9A-Z]{5}$/.test(err.code);
+    res.status(isDbError ? 500 : 400).json({
+      message: isDbError ? "Server error" : err.message,
+    });
   } finally {
     client.release();
   }

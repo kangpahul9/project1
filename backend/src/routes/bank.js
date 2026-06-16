@@ -294,8 +294,9 @@ router.post(
 
       req.log?.error(err, "Bank transaction failed");
 
-      res.status(400).json({
-        message: err.message || "Transaction failed",
+      const isDbError = err.code && /^[0-9A-Z]{5}$/.test(err.code);
+      res.status(isDbError ? 500 : 400).json({
+        message: isDbError ? "Server error" : (err.message || "Transaction failed"),
       });
 
     } finally {

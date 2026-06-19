@@ -1,23 +1,13 @@
 import jwt from "jsonwebtoken";
 import pool from "../config/db.js";
 import logger from "../utils/logger.js";
+import {
+  getCachedTokenVersion,
+  setCachedTokenVersion,
+  invalidateTokenVersionCache,
+} from "../utils/tokenVersionCache.js";
 
-// Cache token versions to avoid a DB hit on every request (30s TTL)
-const versionCache = new Map();
-
-function getCachedVersion(userId) {
-  const entry = versionCache.get(userId);
-  if (entry && entry.expiresAt > Date.now()) return entry.version;
-  return null;
-}
-
-function setCachedVersion(userId, version) {
-  versionCache.set(userId, { version, expiresAt: Date.now() + 30_000 });
-}
-
-export function invalidateVersionCache(userId) {
-  versionCache.delete(userId);
-}
+export { invalidateTokenVersionCache as invalidateVersionCache };
 
 export const authenticate = async (req, res, next) => {
   try {
@@ -31,9 +21,8 @@ export const authenticate = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Token version check — invalidated on logout
     const tokenVersion = decoded.tokenVersion ?? 0;
-    let dbVersion = getCachedVersion(decoded.id);
+    let dbVersion = await getCachedTokenVersion(decoded.id);
 
     if (dbVersion === null) {
       const result = await pool.query(
@@ -44,7 +33,7 @@ export const authenticate = async (req, res, next) => {
         return res.status(401).json({ message: "Invalid or expired token" });
       }
       dbVersion = result.rows[0].token_version;
-      setCachedVersion(decoded.id, dbVersion);
+      await setCachedTokenVersion(decoded.id, dbVersion);
     }
 
     if (tokenVersion !== dbVersion) {

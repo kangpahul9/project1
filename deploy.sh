@@ -8,11 +8,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -e
 
-APP_DIR="/var/www/kangpos"
-REPO_DIR="$APP_DIR/repo"
-FRONTEND_DIST="$APP_DIR/frontend"
+APP_DIR="/var/www/html"
+REPO_DIR="/home/ubuntu/project1"
 BACKEND_DIR="$REPO_DIR/backend"
-FRONTEND_SRC="$REPO_DIR/frontend/client"
+FRONTEND_ROOT="$REPO_DIR/frontend"
+FRONTEND_DIST="$FRONTEND_ROOT/dist/public"
 
 echo "── Pulling latest code ─────────────────────────────────────"
 cd "$REPO_DIR"
@@ -23,17 +23,17 @@ cd "$BACKEND_DIR"
 npm ci --omit=dev
 
 echo "── Building frontend ────────────────────────────────────────"
-cd "$FRONTEND_SRC"
+cd "$FRONTEND_ROOT"
 npm ci
 npm run build
 
 echo "── Deploying frontend static files ─────────────────────────"
-rm -rf "$FRONTEND_DIST"
-cp -r "$FRONTEND_SRC/dist" "$FRONTEND_DIST"
+sudo rm -rf "$APP_DIR"/*
+sudo cp -r "$FRONTEND_DIST"/. "$APP_DIR"/
 
 echo "── Restarting backend via PM2 ───────────────────────────────"
 cd "$BACKEND_DIR"
-pm2 reload kangpos-api --update-env || pm2 start src/index.js --name kangpos-api
+pm2 reload kangpos --update-env || pm2 start src/index.js --name kangpos
 
 echo "── Reloading nginx ──────────────────────────────────────────"
 sudo nginx -t && sudo systemctl reload nginx

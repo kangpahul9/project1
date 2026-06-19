@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import logger from "./logger.js";
+import { createHash } from "crypto";
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -8,6 +9,31 @@ const transporter = nodemailer.createTransport({
     pass: process.env.SYSTEM_EMAIL_PASSWORD,
   },
 });
+
+export function hashResetToken(rawToken) {
+  return createHash("sha256").update(rawToken).digest("hex");
+}
+
+export async function sendPasswordResetEmail({ toEmail, rawToken, restaurantName }) {
+  try {
+    const resetUrl = `${process.env.CLIENT_URL}/reset-password?token=${rawToken}`;
+    const html = `
+      <h2>Password Reset Request</h2>
+      <p>You requested a password reset${restaurantName ? ` for ${restaurantName}` : ""}.</p>
+      <p>Click the link below to reset your password. It expires in 1 hour.</p>
+      <p><a href="${resetUrl}">${resetUrl}</a></p>
+      <p>If you did not request this, ignore this email.</p>
+    `;
+    await transporter.sendMail({
+      from: `"KangPOS" <${process.env.SYSTEM_EMAIL}>`,
+      to: toEmail,
+      subject: "Password Reset",
+      html,
+    });
+  } catch (err) {
+    logger.error({ err }, "Password reset email failed");
+  }
+}
 
 export async function sendDiscrepancyEmail(data) {
   try {

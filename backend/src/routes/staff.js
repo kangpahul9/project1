@@ -260,7 +260,7 @@ router.get("/:id/earnings", authenticate, requireAdmin, async (req, res) => {
 /* ===============================
    UPDATE STAFF LOGIN
 ================================ */
-router.put("/:id/login", authenticate, requireAdmin, async (req, res) => {
+router.put("/:id/login", authenticate, requireAdmin, async (req, res, next) => {
   const { id } = req.params;
   const { email, password } = req.body;
 
@@ -306,7 +306,7 @@ router.put("/:id/login", authenticate, requireAdmin, async (req, res) => {
 
   } catch (err) {
     await client.query("ROLLBACK");
-    res.status(400).json({ message: err.message });
+    next(err);
   } finally {
     client.release();
   }
@@ -554,7 +554,7 @@ await bankWithEvent(client, {
 /* ===============================
    ADD STAFF (ADMIN)
 ================================ */
-router.post("/", authenticate, requireAdmin, async (req, res) => {
+router.post("/", authenticate, requireAdmin, async (req, res, next) => {
   const client = await pool.connect();
 
   const {
@@ -668,7 +668,7 @@ router.post("/", authenticate, requireAdmin, async (req, res) => {
 
   } catch (err) {
     await client.query("ROLLBACK");
-    res.status(400).json({ message: err.message });
+    next(err);
   } finally {
     client.release();
   }
@@ -703,7 +703,7 @@ router.get("/:id", authenticate, requireAdmin, async (req, res) => {
 /* ===============================
    UPDATE STAFF
 ================================ */
-router.put("/:id", authenticate, requireAdmin, async (req, res) => {
+router.put("/:id", authenticate, requireAdmin, async (req, res, next) => {
   const client = await pool.connect();
 
   const { id } = req.params;
@@ -768,7 +768,7 @@ router.put("/:id", authenticate, requireAdmin, async (req, res) => {
 
   } catch (err) {
     await client.query("ROLLBACK");
-    res.status(400).json({ message: err.message });
+    next(err);
   } finally {
     client.release();
   }
@@ -777,7 +777,7 @@ router.put("/:id", authenticate, requireAdmin, async (req, res) => {
 /* ===============================
    SOFT DELETE STAFF
 ================================ */
-router.delete("/:id", authenticate, requireAdmin, async (req, res) => {
+router.delete("/:id", authenticate, requireAdmin, async (req, res, next) => {
   const client = await pool.connect();
 
   try {
@@ -812,7 +812,7 @@ router.delete("/:id", authenticate, requireAdmin, async (req, res) => {
 
   } catch (err) {
     await client.query("ROLLBACK");
-    res.status(400).json({ message: err.message });
+    next(err);
   } finally {
     client.release();
   }

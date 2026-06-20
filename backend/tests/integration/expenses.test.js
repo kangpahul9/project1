@@ -179,13 +179,13 @@ describe("POST /expenses — input validation", () => {
     expect(res.body.message).toContain("Staff required");
   });
 
-  test("STAFF role can create expenses (no admin guard on POST)", async () => {
+  test("STAFF role cannot create expenses (admin only)", async () => {
     const res = await request(app)
       .post("/expenses")
       .set(auth(staffToken))
       .send(validExpense);
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(403);
   });
 
   test("returns 401 without token", async () => {

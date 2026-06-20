@@ -5,7 +5,12 @@ const TTL_SECONDS = 30;
 // Use Redis if REDIS_URL is configured, otherwise fall back to in-process Map
 let redisClient = null;
 
-if (process.env.REDIS_URL) {
+// Wrapped in async IIFE to avoid top-level await (Jest/CJS compat)
+(async () => {
+  if (!process.env.REDIS_URL) {
+    logger.info("Token version cache: using in-memory (set REDIS_URL for multi-instance support)");
+    return;
+  }
   try {
     const { default: Redis } = await import("ioredis");
     redisClient = new Redis(process.env.REDIS_URL, { lazyConnect: true });
@@ -15,9 +20,7 @@ if (process.env.REDIS_URL) {
     logger.warn({ err }, "Redis unavailable — falling back to in-memory cache");
     redisClient = null;
   }
-} else {
-  logger.info("Token version cache: using in-memory (set REDIS_URL for multi-instance support)");
-}
+})();
 
 // In-memory fallback
 const memCache = new Map();

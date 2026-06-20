@@ -1,6 +1,6 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
-import { requireAdmin } from "../middleware/authMiddleware.js";
+import { authenticate, requireAdmin } from "../middleware/authMiddleware.js";
 import { handleAIQuery } from "../ai/aiService.js";
 
 const router = express.Router();
@@ -13,7 +13,7 @@ const aiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-router.post("/chat", aiLimiter, requireAdmin, async (req, res, next) => {
+router.post("/chat", aiLimiter, authenticate, requireAdmin, async (req, res, next) => {
   try {
     const { message } = req.body;
     const { restaurantId, userId } = req;

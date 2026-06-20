@@ -20,3 +20,17 @@ process.env.XERO_REDIRECT_URI = "http://localhost:3000/api/xero/callback";
 
 // OpenAI (optional — route returns 503 if missing)
 process.env.OPENAI_API_KEY = "sk-fake-openai-key";
+
+// Pre-populate the in-memory token version cache for user IDs used in tests.
+// authMiddleware checks token_version via cache first; if cached, it skips the
+// pool.query call. This prevents tests' mockResolvedValueOnce from being
+// consumed by the middleware before the route handler sees it.
+try {
+  const { setCachedTokenVersion } = require("../src/utils/tokenVersionCache.js");
+  for (let id = 1; id <= 100; id++) {
+    // setCachedTokenVersion is async but uses synchronous memSet when no Redis
+    setCachedTokenVersion(id, 0).catch(() => {});
+  }
+} catch (_) {
+  // tokenVersionCache may not be loadable in all contexts; ignore
+}

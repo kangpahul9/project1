@@ -98,12 +98,12 @@ describe("PUT /restaurant/info", () => {
     expect(res.body.name).toBe("KangFood Updated");
   });
 
-  test("STAFF can also update restaurant info", async () => {
+  test("STAFF cannot update restaurant info (admin only)", async () => {
     const res = await request(app)
       .put("/restaurant/info")
       .set(auth(staffToken))
       .send(validPayload);
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 
   test("returns 400 when name is missing", async () => {
@@ -192,13 +192,12 @@ describe("PUT /restaurant/settings", () => {
     expect(res.body.use_business_day).toBe(true);
   });
 
-  test("STAFF can also update settings", async () => {
-    pool.query.mockResolvedValueOnce({ rows: [{ restaurant_id: 1, ...validSettings }] });
+  test("STAFF cannot update settings (admin only)", async () => {
     const res = await request(app)
       .put("/restaurant/settings")
       .set(auth(staffToken))
       .send(validSettings);
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 
   test("returns 401 without token", async () => {

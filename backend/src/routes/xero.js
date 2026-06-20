@@ -31,7 +31,7 @@ function verifyState(state) {
 
 // Ensure advance_deduction_type_id column exists (idempotent)
 pool.query(`ALTER TABLE xero_connections ADD COLUMN IF NOT EXISTS advance_deduction_type_id TEXT`)
-  .catch(() => {}); // silently ignore if table doesn't exist yet
+  ?.catch(() => {}); // silently ignore if table doesn't exist yet
 
 const XERO_CLIENT_ID     = process.env.XERO_CLIENT_ID;
 const XERO_CLIENT_SECRET = process.env.XERO_CLIENT_SECRET;

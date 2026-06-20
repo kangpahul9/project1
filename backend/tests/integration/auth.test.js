@@ -6,7 +6,8 @@ import authRouter from "../../src/routes/auth.js";
 
 jest.mock("../../src/services/userService.js");
 jest.mock("../../src/config/db.js", () => ({
-  default: { query: jest.fn(), connect: jest.fn() },
+  __esModule: true,
+  default: { query: jest.fn().mockResolvedValue({ rows: [{ token_version: 0 }], rowCount: 1 }), connect: jest.fn() },
 }));
 
 const { findUserByEmail } = require("../../src/services/userService.js");

@@ -196,12 +196,12 @@ describe("POST /orders/:id/refund", () => {
     expect(res.status).toBe(200);
   });
 
-  test("STAFF can also request a refund", async () => {
+  test("STAFF cannot request a refund (admin only)", async () => {
     const res = await request(app)
       .post("/orders/1/refund")
       .set(auth(staffToken))
       .send(validRefund);
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 
   test("returns 401 without token", async () => {

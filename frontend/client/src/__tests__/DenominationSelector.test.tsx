@@ -19,9 +19,9 @@ describe("DenominationSelector", () => {
 
     render(<DenominationSelector breakdown={breakdown} setBreakdown={setBreakdown} />);
 
-    expect(screen.getByText("₹500")).toBeInTheDocument();
-    expect(screen.getByText("₹100")).toBeInTheDocument();
-    expect(screen.getByText("₹50")).toBeInTheDocument();
+    expect(screen.getByAltText("₹500")).toBeInTheDocument();
+    expect(screen.getByAltText("₹100")).toBeInTheDocument();
+    expect(screen.getByAltText("₹50")).toBeInTheDocument();
   });
 
   test("displays correct quantity for each note", () => {
@@ -82,7 +82,7 @@ describe("DenominationSelector", () => {
 
     render(<DenominationSelector breakdown={breakdown} setBreakdown={setBreakdown} />);
 
-    fireEvent.click(screen.getByText("₹100"));
+    fireEvent.click(screen.getByAltText("₹100"));
 
     expect(setBreakdown).toHaveBeenCalledOnce();
     const updater = setBreakdown.mock.calls[0][0];

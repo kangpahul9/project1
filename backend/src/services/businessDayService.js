@@ -32,6 +32,36 @@ export async function closeBusinessDay({
   const businessDay = dayRes.rows[0];
 
   /* ===============================
+     DENOMINATION VALIDATION
+  ============================== */
+  const denomRes = await client.query(
+    `SELECT note_value, quantity FROM denominations
+     WHERE restaurant_id=$1 AND business_day_id=$2
+     ORDER BY note_value DESC`,
+    [restaurantId, businessDay.id]
+  );
+  const sysDenoms = denomRes.rows;
+
+  for (const { note, qty } of breakdown) {
+    if (!Number.isFinite(qty) || qty < 0 || !Number.isInteger(qty)) {
+      throw new Error("Invalid denomination values");
+    }
+  }
+
+  const sysMap = Object.fromEntries(
+    sysDenoms.map(d => [String(d.note_value), Number(d.quantity)])
+  );
+  for (const { note, qty } of breakdown) {
+    const key = String(note);
+    if (!(key in sysMap)) {
+      throw new Error(`Unexpected denomination ₹${note}`);
+    }
+    if (qty !== sysMap[key]) {
+      throw new Error(`Denomination mismatch for ₹${note}`);
+    }
+  }
+
+  /* ===============================
      LEDGER CHECK
   ============================== */
   const ledger = await client.query(`

@@ -27,8 +27,10 @@ app.use((req, _res, next) => {
 app.use("/roster", rosterRouter);
 app.use((err, _req, res, _next) => res.status(err.status || 400).json({ message: err.message }));
 
-// Today's date string for shift mocks
-const TODAY = new Date().toISOString().slice(0, 10);
+// Today's date string for shift mocks — must use LOCAL date so the window check
+// (which parses "YYY-MM-DDTHH:MM:SS" as local time) stays in range regardless of timezone.
+const _now = new Date();
+const TODAY = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}-${String(_now.getDate()).padStart(2, "0")}`;
 
 beforeEach(() => {
   pool.query.mockReset();
@@ -367,7 +369,7 @@ describe("GET /roster/my-shifts", () => {
 describe("POST /roster/clock-in", () => {
   // Shift with today's date and wide time window so now falls in valid range
   const todayShift = {
-    id: 1, date: TODAY, shift_start: "00:00:00", shift_end: "23:59:00", restaurant_id: 1,
+    id: 1, date: TODAY, shift_start: "00:00:00", shift_end: "23:59:59", restaurant_id: 1,
   };
 
   const makeClockInClient = () => ({

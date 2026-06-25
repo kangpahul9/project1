@@ -59,11 +59,16 @@ function SidebarInner({ onClose }: { onClose?: () => void }) {
       {/* Logo */}
       <div className="px-6 pt-6 pb-5 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-md flex-shrink-0">
-            <Store className="w-4.5 h-4.5 text-white" />
-          </div>
+          <svg width="36" height="36" viewBox="0 0 90 90" fill="none" className="shrink-0" aria-hidden="true">
+            <rect width="90" height="90" rx="16" fill="#2563eb"/>
+            <path d="M 28 20 L 28 70" stroke="white" strokeWidth="9" strokeLinecap="round"/>
+            <path d="M 62 20 L 28 45" stroke="white" strokeWidth="9" strokeLinecap="round"/>
+            <path d="M 36 40 L 62 70" stroke="white" strokeWidth="9" strokeLinecap="round"/>
+          </svg>
           <div>
-            <h1 className="text-base font-bold text-white tracking-tight leading-none">KangPOS</h1>
+            <h1 className="text-base font-bold text-white tracking-tight leading-none">
+              Kang<span className="text-[#5b8cff]">POS</span>
+            </h1>
             <p className="text-[11px] text-sidebar-foreground/50 mt-0.5 leading-none">Business Terminal</p>
           </div>
         </div>

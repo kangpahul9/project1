@@ -172,7 +172,8 @@ describe("GET /staff/summary", () => {
     pool.query
       .mockResolvedValueOnce({ rows: [{ total: "9000" }] })   // total salary
       .mockResolvedValueOnce({ rows: [{ paid: "1000" }] })     // paid this month
-      .mockResolvedValueOnce({ rows: [{ balance: "0" }] });    // outstanding balance
+      .mockResolvedValueOnce({ rows: [{ balance: "0" }] })     // outstanding balance
+      .mockResolvedValueOnce({ rows: [{ total: "0" }] });      // pending advances
     const res = await request(app).get("/staff/summary").set(auth(adminToken));
     expect(res.status).toBe(200);
     expect(res.body.totalSalary).toBe(9000);

@@ -103,11 +103,11 @@ router.get("/", authenticate, requireAdmin, async (req, res, next) => {
       };
     }
 
-    /* ── Fetch outstanding advances per staff ── */
+    /* ── Fetch outstanding advances per staff (net of repayments) ── */
     const advRes = await pool.query(
       `SELECT staff_id, COALESCE(SUM(amount), 0) AS advance_total
        FROM staff_advances
-       WHERE restaurant_id=$1 AND payroll_batch_id IS NULL
+       WHERE restaurant_id=$1
        GROUP BY staff_id`,
       [restaurantId]
     );
@@ -249,13 +249,23 @@ router.post("/advances", authenticate, requireAdmin, async (req, res, next) => {
 router.get("/advances", authenticate, requireAdmin, async (req, res, next) => {
   try {
     const { staff_id } = req.query;
+    // Return individual positive advances for staff who still have net outstanding > 0
+    // net_outstanding includes repayment rows (negative amounts)
     const r = await pool.query(
-      `SELECT sa.*, st.name AS staff_name
+      `SELECT sa.*, st.name AS staff_name, net.net_outstanding
        FROM staff_advances sa
        JOIN staff st ON st.id = sa.staff_id
+       JOIN (
+         SELECT staff_id, COALESCE(SUM(amount), 0) AS net_outstanding
+         FROM staff_advances
+         WHERE restaurant_id=$1
+         GROUP BY staff_id
+       ) net ON net.staff_id = sa.staff_id
        WHERE sa.restaurant_id=$1
-         AND ($2::bigint IS NULL OR sa.staff_id=$2)
+         AND sa.amount > 0
          AND sa.payroll_batch_id IS NULL
+         AND ($2::bigint IS NULL OR sa.staff_id=$2)
+         AND net.net_outstanding > 0
        ORDER BY sa.created_at DESC`,
       [req.restaurantId, staff_id || null]
     );
@@ -281,11 +291,12 @@ router.delete("/advances/:id", authenticate, requireAdmin, async (req, res, next
 router.post("/pay", authenticate, requireAdmin, async (req, res, next) => {
   const client = await pool.connect();
   try {
-    const { entries, payment_method, notes } = req.body;
+    // advance_deductions: { [staff_id]: amount } — optional partial deductions
+    const { entries, payment_method, notes, advance_deductions = {} } = req.body;
     const { restaurantId, userId } = req;
 
     if (!Array.isArray(entries) || entries.length === 0) throw new Error("No entries provided");
-    if (!["cash", "bank", "xero"].includes(payment_method)) throw new Error("Invalid payment method");
+    if (!["paid", "xero"].includes(payment_method)) throw new Error("Invalid payment method");
 
     await client.query("BEGIN");
 
@@ -322,13 +333,26 @@ router.post("/pay", authenticate, requireAdmin, async (req, res, next) => {
       throw new Error("All selected shifts are already fully paid");
     }
 
-    // Settle outstanding advances for all included staff
-    const includedStaffIds = [...new Set(entries.map(e => e.staff_id).filter(Boolean))];
-    if (includedStaffIds.length) {
+    // Record partial advance repayments as negative staff_advances rows
+    for (const [staffIdStr, deductionAmt] of Object.entries(advance_deductions)) {
+      const deduction = Number(deductionAmt);
+      if (!deduction || deduction <= 0) continue;
+
+      // Validate deduction doesn't exceed outstanding balance
+      const balRes = await client.query(
+        `SELECT COALESCE(SUM(amount), 0) AS balance
+         FROM staff_advances WHERE restaurant_id=$1 AND staff_id=$2`,
+        [restaurantId, Number(staffIdStr)]
+      );
+      const outstanding = Number(balRes.rows[0].balance);
+      const capped = Math.min(deduction, outstanding);
+      if (capped <= 0) continue;
+
       await client.query(
-        `UPDATE staff_advances SET payroll_batch_id=$1
-         WHERE restaurant_id=$2 AND staff_id = ANY($3) AND payroll_batch_id IS NULL`,
-        [batchId, restaurantId, includedStaffIds]
+        `INSERT INTO staff_advances
+           (restaurant_id, staff_id, amount, notes, payroll_batch_id, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [restaurantId, Number(staffIdStr), -capped, `Advance repayment — Payroll Batch #${batchId}`, batchId, userId]
       );
     }
 

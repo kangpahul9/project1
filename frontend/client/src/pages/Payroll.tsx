@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import dayjs from "dayjs";
 import {
   ChevronLeft, ChevronRight, CheckSquare, Square,
-  Banknote, Building2, Send, Clock, Settings2,
+  Banknote, CircleCheck, Send, Clock, Settings2,
   CalendarCheck, DollarSign, Users, History, Receipt, Wrench,
   AlertCircle, Trash2,
 } from "lucide-react";
@@ -118,11 +118,13 @@ export default function Payroll() {
 
   const [mode, setMode] = useState<"roster" | "actual">("roster");
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [payMethod, setPayMethod] = useState<"cash" | "bank" | "xero">("cash");
+  const [payMethod, setPayMethod] = useState<"paid" | "xero">("paid");
   const [notes, setNotes] = useState("");
   const [ratesOpen, setRatesOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [advancesOpen, setAdvancesOpen] = useState(false);
+  // Per-staff advance deduction controls: { [staff_id]: { enabled, amount } }
+  const [advDeductions, setAdvDeductions] = useState<Record<number, { enabled: boolean; amount: string }>>({});
 
   const { data: entries = [], isLoading } = usePayrollSummary(weekStart, weekEnd, mode);
   const { data: batches = [] } = usePayrollBatches();
@@ -163,29 +165,42 @@ export default function Payroll() {
   const totalGross = selectedEntries.reduce((s, e) => s + e.remaining, 0);
   const totalHours = selectedEntries.reduce((s, e) => s + e.hours, 0);
 
-  // Per-staff net: gross remaining minus outstanding advance (capped at gross, min 0)
-  const staffNetMap = useMemo(() => {
-    const map: Record<number, { name: string; gross: number; advance: number; net: number }> = {};
+  // Per-staff gross summary (for computing advance caps)
+  const staffGrossMap = useMemo(() => {
+    const map: Record<number, { name: string; gross: number; outstanding: number }> = {};
     for (const e of selectedEntries) {
       if (!map[e.staff_id]) {
-        map[e.staff_id] = { name: e.staff_name, gross: 0, advance: e.outstanding_advance || 0, net: 0 };
+        map[e.staff_id] = { name: e.staff_name, gross: 0, outstanding: e.outstanding_advance || 0 };
       }
       map[e.staff_id].gross += e.remaining;
-    }
-    for (const v of Object.values(map)) {
-      v.net = Math.max(0, v.gross - v.advance);
     }
     return map;
   }, [selectedEntries]);
 
-  const totalAdvanceSettled = Object.values(staffNetMap).reduce((s, v) => s + Math.min(v.advance, v.gross), 0);
-  const totalNet = totalGross - totalAdvanceSettled;
+  // Resolved deduction per staff — what will actually be deducted
+  const resolvedDeductions = useMemo(() => {
+    const out: Record<number, number> = {};
+    for (const [idStr, staffData] of Object.entries(staffGrossMap)) {
+      const id = Number(idStr);
+      const ctrl = advDeductions[id];
+      if (!ctrl?.enabled || !staffData.outstanding) { out[id] = 0; continue; }
+      const raw = Number(ctrl.amount) || 0;
+      // Cap: can't deduct more than outstanding or gross pay
+      out[id] = Math.min(raw, staffData.outstanding, staffData.gross);
+    }
+    return out;
+  }, [staffGrossMap, advDeductions]);
 
-  // Advance-aware entry builder: distributes deduction proportionally across shifts per staff
+  const totalDeducted = Object.values(resolvedDeductions).reduce((s, v) => s + v, 0);
+  const totalNet = totalGross - totalDeducted;
+
+  // Entry builder: distributes deduction proportionally across a staff member's shifts
   const buildEntries = () =>
     selectedEntries.map(e => {
-      const staffData = staffNetMap[e.staff_id];
-      const ratio = staffData && staffData.gross > 0 ? staffData.net / staffData.gross : 1;
+      const staffData = staffGrossMap[e.staff_id];
+      const deduction = resolvedDeductions[e.staff_id] || 0;
+      const netForStaff = staffData.gross - deduction;
+      const ratio = staffData.gross > 0 ? netForStaff / staffData.gross : 1;
       return {
         shift_id: e.shift_id,
         staff_id: e.staff_id,
@@ -197,10 +212,25 @@ export default function Payroll() {
       };
     });
 
-  // Advances with per-staff info for display
-  const selectedAdvances = Object.entries(staffNetMap)
-    .filter(([, v]) => v.advance > 0)
-    .map(([id, v]) => ({ staff_id: Number(id), name: v.name, advance: Math.min(v.advance, v.gross) }));
+  // Staff with outstanding advances in the current selection (for Xero deduction button)
+  const selectedAdvances = Object.entries(resolvedDeductions)
+    .filter(([, amt]) => amt > 0)
+    .map(([id, amt]) => ({ staff_id: Number(id), name: staffGrossMap[Number(id)]?.name || "", advance: amt }));
+
+  // Helper to initialise/toggle a staff's deduction control
+  const toggleAdvDeduction = (staffId: number, outstanding: number, gross: number) => {
+    setAdvDeductions(prev => {
+      const cur = prev[staffId];
+      if (cur?.enabled) return { ...prev, [staffId]: { ...cur, enabled: false } };
+      return {
+        ...prev,
+        [staffId]: {
+          enabled: true,
+          amount: String(Math.min(outstanding, gross).toFixed(2)),
+        },
+      };
+    });
+  };
 
   // Group entries by date
   const byDate = useMemo(() => {
@@ -218,9 +248,15 @@ export default function Payroll() {
     const onSuccess = () => {
       setSelected(new Set());
       setNotes("");
+      setAdvDeductions({});
     };
 
     const builtEntries = buildEntries();
+    // Only pass deductions > 0
+    const deductionsPayload: Record<number, number> = {};
+    for (const [id, amt] of Object.entries(resolvedDeductions)) {
+      if (amt > 0) deductionsPayload[Number(id)] = amt;
+    }
 
     if (payMethod === "xero") {
       sendToXero({
@@ -234,6 +270,7 @@ export default function Payroll() {
         entries: builtEntries,
         payment_method: payMethod,
         notes: notes.trim() || undefined,
+        advance_deductions: Object.keys(deductionsPayload).length ? deductionsPayload : undefined,
       }, { onSuccess });
     }
   };
@@ -306,32 +343,46 @@ export default function Payroll() {
               <Banknote className="w-4 h-4" /> Outstanding Advances
             </DialogTitle>
           </DialogHeader>
-          <p className="text-xs text-muted-foreground -mt-1">Record advances from the Staff page.</p>
+          <p className="text-xs text-muted-foreground -mt-1">Record advances from the Staff page. Partial repayments reduce the net owed.</p>
           <div className="divide-y max-h-80 overflow-y-auto">
             {(allAdvances as any[]).length === 0 && (
               <p className="text-sm text-muted-foreground py-6 text-center">No outstanding advances.</p>
             )}
-            {(allAdvances as any[]).map((a: any) => (
-              <div key={a.id} className="flex items-center justify-between py-2.5 text-sm">
-                <div>
-                  <p className="font-medium">{a.staff_name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(a.created_at).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
-                    {a.notes && ` · ${a.notes}`}
-                  </p>
+            {(allAdvances as any[]).map((a: any) => {
+              const given = Number(a.amount);
+              const net = Number(a.net_outstanding);
+              const repaid = given - net;
+              return (
+                <div key={a.id} className="py-2.5 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">{a.staff_name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(a.created_at).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
+                        {a.notes && ` · ${a.notes}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 text-right">
+                      <div>
+                        <p className="font-semibold text-amber-600">{fmt(given, symbol)}</p>
+                        {repaid > 0 && (
+                          <p className="text-[10px] text-emerald-600 tabular-nums">
+                            −{fmt(repaid, symbol)} repaid · net {fmt(net, symbol)}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => deleteAdvance(a.id)}
+                        className="text-muted-foreground hover:text-red-500 transition-colors"
+                        title="Cancel advance"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-amber-600">{fmt(Number(a.amount), symbol)}</span>
-                  <button
-                    onClick={() => deleteAdvance(a.id)}
-                    className="text-muted-foreground hover:text-red-500 transition-colors"
-                    title="Cancel advance"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </DialogContent>
       </Dialog>
@@ -351,11 +402,14 @@ export default function Payroll() {
           <div className="flex items-center gap-2 flex-wrap">
             <Button variant="outline" size="sm" onClick={() => setAdvancesOpen(true)}>
               <Banknote className="w-4 h-4 mr-1" /> Advances
-              {(allAdvances as any[]).length > 0 && (
-                <span className="ml-1 bg-amber-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                  {(allAdvances as any[]).length}
-                </span>
-              )}
+              {(allAdvances as any[]).length > 0 && (() => {
+                const uniqueStaff = new Set((allAdvances as any[]).map((a: any) => a.staff_id)).size;
+                return (
+                  <span className="ml-1 bg-amber-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                    {uniqueStaff}
+                  </span>
+                );
+              })()}
             </Button>
             <Button variant="outline" size="sm" onClick={() => setHistoryOpen(true)}>
               <History className="w-4 h-4 mr-1" /> History
@@ -506,105 +560,175 @@ export default function Payroll() {
 
         {/* ── Pay panel ── */}
         {selectedEntries.length > 0 && (
-          <div className="fixed bottom-0 left-0 lg:left-60 right-0 bg-card border-t border-border/60 shadow-lg px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-4 z-30">
-            <div className="flex-1">
-              <p className="text-sm font-semibold">
-                {selectedEntries.length} shift{selectedEntries.length !== 1 ? "s" : ""} · {fmtHours(totalHours)}
-                {totalAdvanceSettled > 0 ? (
-                  <>
-                    {" "}· <span className="text-muted-foreground line-through">{fmt(totalGross, symbol)}</span>
-                    {" "}<span className="text-amber-600 dark:text-amber-400 text-xs">−{fmt(totalAdvanceSettled, symbol)} adv</span>
-                    {" "}= <span className="text-primary">{fmt(totalNet, symbol)}</span>
-                  </>
-                ) : (
-                  <> · <span className="text-primary">{fmt(totalGross, symbol)}</span></>
-                )}
-              </p>
-              {selectedAdvances.length > 0 && (
-                <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
-                  Advance deducted: {selectedAdvances.map(a => `${a.name.split(" ")[0]} −${fmt(a.advance, symbol)}`).join(", ")}
-                </p>
-              )}
-              <Input
-                placeholder="Notes (optional)"
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                className="mt-2 h-8 text-xs max-w-xs"
-              />
-            </div>
+          <div className="fixed bottom-0 left-0 lg:left-60 right-0 bg-card border-t border-border/60 shadow-lg z-30">
 
-            {/* Method + Pay button */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Payment method selector */}
-              <div className="flex rounded-xl border border-border/60 overflow-hidden text-xs">
-                {[
-                  { val: "cash", icon: Banknote, label: "Cash" },
-                  { val: "bank", icon: Building2, label: "Bank" },
-                  { val: "xero", icon: Send, label: "Xero" },
-                ].map(({ val, icon: Icon, label }) => (
-                  <button
-                    key={val}
-                    onClick={() => setPayMethod(val as any)}
-                    className={cn("flex items-center gap-1 px-3 py-2 transition-colors",
-                      payMethod === val ? "bg-primary text-white" : "bg-card text-muted-foreground hover:bg-muted/50"
-                    )}
-                  >
-                    <Icon className="w-3.5 h-3.5" /> {label}
-                  </button>
-                ))}
+            {/* Per-staff advance deduction row */}
+            {Object.entries(staffGrossMap).some(([, v]) => v.outstanding > 0) && (
+              <div className="px-4 sm:px-6 pt-3 pb-2 border-b border-border/40 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                  <Banknote className="w-3.5 h-3.5 text-amber-500" /> Deduct advance from this pay
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  {Object.entries(staffGrossMap)
+                    .filter(([, v]) => v.outstanding > 0)
+                    .map(([idStr, v]) => {
+                      const id = Number(idStr);
+                      const ctrl = advDeductions[id];
+                      const isOn = ctrl?.enabled ?? false;
+                      const deducted = resolvedDeductions[id] || 0;
+                      const fullAmt = Number(Math.min(v.outstanding, v.gross).toFixed(2));
+                      const isFull = isOn && Number(ctrl?.amount) === fullAmt;
+                      return (
+                        <div key={id} className={cn(
+                          "flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors",
+                          isOn ? "border-amber-400 bg-amber-50 dark:bg-amber-950/20" : "border-border/60 bg-muted/30"
+                        )}>
+                          {/* Toggle switch */}
+                          <button
+                            role="switch"
+                            aria-checked={isOn}
+                            onClick={() => toggleAdvDeduction(id, v.outstanding, v.gross)}
+                            className={cn(
+                              "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none",
+                              isOn ? "bg-amber-500" : "bg-muted-foreground/25"
+                            )}
+                          >
+                            <span className={cn(
+                              "pointer-events-none inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform",
+                              isOn ? "translate-x-4.5" : "translate-x-0.75"
+                            )} />
+                          </button>
+
+                          <span className="text-xs font-medium">{v.name.split(" ")[0]}</span>
+                          <span className="text-[10px] text-muted-foreground">owes {fmt(v.outstanding, symbol)}</span>
+
+                          {isOn && (
+                            <div className="flex items-center gap-1.5">
+                              {/* Full amount quick-select */}
+                              <button
+                                onClick={() => setAdvDeductions(prev => ({
+                                  ...prev,
+                                  [id]: { enabled: true, amount: String(fullAmt) },
+                                }))}
+                                className={cn(
+                                  "text-[10px] font-semibold px-1.5 py-0.5 rounded border transition-colors",
+                                  isFull
+                                    ? "bg-amber-500 text-white border-amber-500"
+                                    : "text-amber-600 border-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                                )}
+                              >
+                                Full
+                              </button>
+
+                              {/* Custom amount */}
+                              <input
+                                type="number"
+                                min="0"
+                                max={fullAmt}
+                                step="0.01"
+                                value={ctrl?.amount ?? ""}
+                                placeholder="0.00"
+                                onChange={e => setAdvDeductions(prev => ({
+                                  ...prev,
+                                  [id]: { enabled: true, amount: e.target.value },
+                                }))}
+                                className="w-20 h-6 text-xs px-2 rounded-lg border border-amber-300 bg-white dark:bg-background text-center tabular-nums"
+                              />
+
+                              {deducted > 0 && (
+                                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium tabular-nums">
+                                  → net {fmt(v.gross - deducted, symbol)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
+            {/* Main pay row */}
+            <div className="px-4 sm:px-6 py-3 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="flex-1">
+                <p className="text-sm font-semibold">
+                  {selectedEntries.length} shift{selectedEntries.length !== 1 ? "s" : ""} · {fmtHours(totalHours)}
+                  {totalDeducted > 0 ? (
+                    <>
+                      {" "}· <span className="text-muted-foreground line-through">{fmt(totalGross, symbol)}</span>
+                      {" "}<span className="text-amber-600 dark:text-amber-400 text-xs">−{fmt(totalDeducted, symbol)} adv</span>
+                      {" "}= <span className="text-primary font-bold">{fmt(totalNet, symbol)}</span>
+                    </>
+                  ) : (
+                    <> · <span className="text-primary font-bold">{fmt(totalGross, symbol)}</span></>
+                  )}
+                </p>
+                <Input
+                  placeholder="Notes (optional)"
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  className="mt-2 h-7 text-xs max-w-xs"
+                />
               </div>
 
-              {payMethod === "xero" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setupXeroEmployees()}
-                  disabled={settingUpXero}
-                  title="Assign pay run calendars to all Xero-mapped employees"
-                >
-                  <Wrench className="w-3.5 h-3.5 mr-1" />
-                  {settingUpXero ? "Setting up…" : "Fix Setup"}
-                </Button>
-              )}
-
-              {/* Advance deductions via Xero */}
-              {payMethod === "xero" && totalAdvanceSettled > 0 && (
-                <>
-                  {/* Deduction type picker (one-time setup) */}
-                  {deductionData && (
-                    <select
-                      className="border rounded-lg px-2 py-1.5 text-xs bg-background max-w-[160px]"
-                      value={deductionData.saved_id ?? ""}
-                      onChange={e => e.target.value && saveDeductionType(e.target.value)}
-                      title="Xero deduction type for advance repayment"
+              {/* Method + Pay button */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex rounded-xl border border-border/60 overflow-hidden text-xs">
+                  {[
+                    { val: "paid", icon: CircleCheck, label: "Already Paid" },
+                    { val: "xero", icon: Send, label: "Xero" },
+                  ].map(({ val, icon: Icon, label }) => (
+                    <button
+                      key={val}
+                      onClick={() => setPayMethod(val as any)}
+                      className={cn("flex items-center gap-1 px-3 py-2 transition-colors",
+                        payMethod === val ? "bg-primary text-white" : "bg-card text-muted-foreground hover:bg-muted/50"
+                      )}
                     >
-                      <option value="">Select deduction type…</option>
-                      {deductionData.types.map(t => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </select>
-                  )}
+                      <Icon className="w-3.5 h-3.5" /> {label}
+                    </button>
+                  ))}
+                </div>
 
-                  {/* Apply to open pay run */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={applyingDeductions || !deductionData?.saved_id}
-                    title={!deductionData?.saved_id ? "Select a deduction type first" : "Apply advance deductions to the current Xero pay run"}
-                    onClick={() =>
-                      applyDeductions(
-                        selectedAdvances.map(a => ({ staff_id: a.staff_id, amount: a.advance }))
-                      )
-                    }
-                  >
-                    {applyingDeductions ? "Applying…" : `Apply −${fmt(totalAdvanceSettled, symbol)} to Pay Run`}
+                {payMethod === "xero" && (
+                  <Button variant="outline" size="sm" onClick={() => setupXeroEmployees()} disabled={settingUpXero}>
+                    <Wrench className="w-3.5 h-3.5 mr-1" />
+                    {settingUpXero ? "Setting up…" : "Fix Setup"}
                   </Button>
-                </>
-              )}
+                )}
 
-              <Button onClick={handlePay} disabled={paying} className="gap-2">
-                {paying ? "Processing…" : `Pay ${fmt(totalNet, symbol)}`}
-              </Button>
+                {payMethod === "xero" && totalDeducted > 0 && (
+                  <>
+                    {deductionData && (
+                      <select
+                        className="border rounded-lg px-2 py-1.5 text-xs bg-background max-w-40"
+                        value={deductionData.saved_id ?? ""}
+                        onChange={e => e.target.value && saveDeductionType(e.target.value)}
+                        title="Xero deduction type for advance repayment"
+                      >
+                        <option value="">Select deduction type…</option>
+                        {deductionData.types.map(t => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={applyingDeductions || !deductionData?.saved_id}
+                      title={!deductionData?.saved_id ? "Select a deduction type first" : "Apply advance deductions to the current Xero pay run"}
+                      onClick={() => applyDeductions(selectedAdvances.map(a => ({ staff_id: a.staff_id, amount: a.advance })))}
+                    >
+                      {applyingDeductions ? "Applying…" : `Apply −${fmt(totalDeducted, symbol)} to Pay Run`}
+                    </Button>
+                  </>
+                )}
+
+                <Button onClick={handlePay} disabled={paying} className="gap-2">
+                  {paying ? "Processing…" : `Pay ${fmt(totalNet, symbol)}`}
+                </Button>
+              </div>
             </div>
           </div>
         )}

@@ -13,6 +13,7 @@ export interface Staff {
   joining_date: string;
   is_active: boolean;
   balance?: number;
+  advance_total?: number;
   email?: string;
 }
 
@@ -173,6 +174,7 @@ export interface StaffSummary {
   paidThisMonth: number;
   unpaidThisMonth: number;
   totalCredit: number;
+  pendingAdvances: number;
 }
 
 export function useStaffSummary() {
@@ -236,6 +238,24 @@ export function useStaffEarnings(
       get(`/staff/${staffId}/earnings`, {
         params: { start, end, mode },
       }),
+  });
+}
+
+// ================= ADVANCE HISTORY (AUD) =================
+
+export interface StaffAdvance {
+  id: number;
+  amount: number;
+  notes?: string | null;
+  payroll_batch_id: number | null;
+  created_at: string;
+}
+
+export function useStaffAdvanceHistory(staffId?: number) {
+  return useQuery<StaffAdvance[]>({
+    queryKey: ["staff-advance-history", staffId],
+    enabled: !!staffId,
+    queryFn: () => get<StaffAdvance[]>(`/staff/${staffId}/advance-history`),
   });
 }
 

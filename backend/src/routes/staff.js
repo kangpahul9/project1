@@ -36,7 +36,7 @@ router.get("/", authenticate, async (req, res) => {
 router.get("/with-balance", authenticate, requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT 
+      SELECT
         s.*,
         u.email,
         COALESCE(SUM(
@@ -44,14 +44,21 @@ router.get("/with-balance", authenticate, requireAdmin, async (req, res) => {
             WHEN t.type = 'payment' THEN -t.amount
             WHEN t.type = 'adjustment' THEN t.amount
           END
-        ),0) AS balance
+        ),0) AS balance,
+        COALESCE(adv.advance_total, 0) AS advance_total
       FROM staff s
       LEFT JOIN users u ON u.id = s.user_id
-      LEFT JOIN staff_transactions t 
+      LEFT JOIN staff_transactions t
         ON s.id = t.staff_id AND s.restaurant_id=$1
-      WHERE s.restaurant_id=$1 
+      LEFT JOIN (
+        SELECT staff_id, SUM(amount) AS advance_total
+        FROM staff_advances
+        WHERE restaurant_id=$1
+        GROUP BY staff_id
+      ) adv ON adv.staff_id = s.id
+      WHERE s.restaurant_id=$1
       AND s.is_active = TRUE
-      GROUP BY s.id, u.email
+      GROUP BY s.id, u.email, adv.advance_total
       ORDER BY s.name ASC
     `,[req.restaurantId]);
 
@@ -100,11 +107,18 @@ router.get("/summary", authenticate, requireAdmin, async (req, res) => {
 
     const totalBalance = Number(balanceRes.rows[0].balance);
 
+    const advanceRes = await pool.query(`
+      SELECT COALESCE(SUM(amount), 0) AS total
+      FROM staff_advances
+      WHERE restaurant_id=$1
+    `, [req.restaurantId]);
+
     res.json({
       totalSalary: Number(totalSalaryRes.rows[0].total),
       paidThisMonth: Number(paidRes.rows[0].paid),
       unpaidThisMonth: totalBalance > 0 ? totalBalance : 0,
-      totalCredit: totalBalance < 0 ? Math.abs(totalBalance) : 0
+      totalCredit: totalBalance < 0 ? Math.abs(totalBalance) : 0,
+      pendingAdvances: Number(advanceRes.rows[0].total),
     });
 
   } catch (err) {
@@ -309,6 +323,27 @@ router.put("/:id/login", authenticate, requireAdmin, async (req, res, next) => {
     next(err);
   } finally {
     client.release();
+  }
+});
+
+/* ===============================
+   STAFF ADVANCE HISTORY (AUD)
+================================ */
+router.get("/:id/advance-history", authenticate, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      `SELECT id, amount, notes, payroll_batch_id, created_at,
+              CASE WHEN amount < 0 THEN 'repayment' ELSE 'advance' END AS entry_type
+       FROM staff_advances
+       WHERE restaurant_id=$1 AND staff_id=$2
+       ORDER BY created_at DESC`,
+      [req.restaurantId, id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    req.log.error({ err }, "Failed to fetch advance history");
+    res.status(500).json({ message: "Failed to fetch advance history" });
   }
 });
 

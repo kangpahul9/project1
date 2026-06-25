@@ -35,10 +35,15 @@ export default function Login() {
       {/* Left decorative panel */}
       <div className="hidden lg:flex flex-col justify-between w-[420px] bg-sidebar p-10 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-md">
-            <Store className="w-4.5 h-4.5 text-white" />
-          </div>
-          <span className="text-white text-base font-bold tracking-tight">KangPOS</span>
+          <svg width="36" height="36" viewBox="0 0 90 90" fill="none" aria-hidden="true">
+            <rect width="90" height="90" rx="16" fill="#2563eb"/>
+            <path d="M 28 20 L 28 70" stroke="white" strokeWidth="9" strokeLinecap="round"/>
+            <path d="M 62 20 L 28 45" stroke="white" strokeWidth="9" strokeLinecap="round"/>
+            <path d="M 36 40 L 62 70" stroke="white" strokeWidth="9" strokeLinecap="round"/>
+          </svg>
+          <span className="text-white text-base font-bold tracking-tight">
+            Kang<span className="text-[#5b8cff]">POS</span>
+          </span>
         </div>
 
         <div>
@@ -73,10 +78,15 @@ export default function Login() {
       <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
         <div className="w-full max-w-[380px]">
           <div className="flex items-center gap-3 mb-8 lg:hidden">
-            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
-              <Store className="w-4.5 h-4.5 text-white" />
-            </div>
-            <span className="text-foreground text-base font-bold tracking-tight">KangPOS</span>
+            <svg width="36" height="36" viewBox="0 0 90 90" fill="none" aria-hidden="true">
+              <rect width="90" height="90" rx="16" fill="#2563eb"/>
+              <path d="M 28 20 L 28 70" stroke="white" strokeWidth="9" strokeLinecap="round"/>
+              <path d="M 62 20 L 28 45" stroke="white" strokeWidth="9" strokeLinecap="round"/>
+              <path d="M 36 40 L 62 70" stroke="white" strokeWidth="9" strokeLinecap="round"/>
+            </svg>
+            <span className="text-foreground text-base font-bold tracking-tight">
+              Kang<span className="text-primary">POS</span>
+            </span>
           </div>
 
           <div className="mb-8">

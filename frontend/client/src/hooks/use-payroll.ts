@@ -32,6 +32,7 @@ export interface Advance {
   amount: number;
   notes?: string;
   created_at: string;
+  net_outstanding: number;
 }
 
 export interface PayrollBatch {
@@ -67,8 +68,9 @@ export function useRecordPayroll() {
   return useMutation({
     mutationFn: async (data: {
       entries: { shift_id: number; staff_id: number; hours: number; rate: number; amount: number }[];
-      payment_method: "cash" | "bank" | "xero";
+      payment_method: "paid" | "xero";
       notes?: string;
+      advance_deductions?: Record<number, number>;
     }) => {
       const promise = post("/payroll/pay", data);
       return toastPromise(promise, {
@@ -80,6 +82,10 @@ export function useRecordPayroll() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payroll"] });
       qc.invalidateQueries({ queryKey: ["payroll-batches"] });
+      qc.invalidateQueries({ queryKey: ["advances"] });
+      qc.invalidateQueries({ queryKey: ["staff", "balance"] });
+      qc.invalidateQueries({ queryKey: ["staff-summary"] });
+      qc.invalidateQueries({ queryKey: ["staff-advance-history"] });
     },
   });
 }

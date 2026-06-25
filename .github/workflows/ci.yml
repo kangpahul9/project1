@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main, new]
+  pull_request:
+    branches: [main]
+
+jobs:
+  security-and-test:
+    name: Security audit & tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: kangpos
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: pos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      NODE_ENV: test
+      JWT_SECRET: test-secret-at-least-32-chars-long
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: kangpos
+      DB_PASSWORD: testpass
+      DB_NAME: pos_test
+      DB_SSL: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Security audit (fail on high/critical)
+        run: npm audit --audit-level=high
+
+      - name: Run tests
+        run: npm test

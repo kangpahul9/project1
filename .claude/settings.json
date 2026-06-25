@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(psql -U kangpahul9 -d pos_db -c \"SELECT s.id as staff_id, s.name, s.user_id, u.id as user_id_in_users, u.email FROM staff s LEFT JOIN users u ON u.id = s.user_id WHERE s.restaurant_id=1;\")"
+    ]
+  }
+}

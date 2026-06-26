@@ -60,7 +60,7 @@ const Navbar = () => {
           <a href={APP_URL} data-testid="link-login" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">
             Login
           </a>
-          <Button asChild className="bg-blue-600 hover:bg-blue-700 text-white border-0">
+          <Button asChild className="bg-linear-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white border-0 rounded-full shadow-md shadow-blue-600/30 hover:shadow-blue-500/40 transition-all duration-200">
             <a href={APP_URL} data-testid="btn-nav-get-started">Get Started</a>
           </Button>
         </div>
@@ -80,7 +80,7 @@ const Navbar = () => {
           <button onClick={() => scrollTo("contact")} className="text-left text-slate-300 py-2">Contact</button>
           <hr className="border-white/10" />
           <a href={APP_URL} className="text-slate-300 py-2">Login</a>
-          <Button asChild className="bg-blue-600 w-full mt-2">
+          <Button asChild className="bg-linear-to-r from-blue-600 to-blue-500 text-white w-full mt-2 rounded-full border-0 shadow-md shadow-blue-600/30">
             <a href={APP_URL}>Get Started</a>
           </Button>
         </div>
@@ -210,10 +210,10 @@ const Hero = () => {
           transition={{ duration: 0.5, delay: 0.3 }}
           className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8"
         >
-          <Button asChild size="lg" className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto text-base h-12 px-8">
+          <Button asChild size="lg" className="bg-linear-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white w-full sm:w-auto text-base h-12 px-8 rounded-full shadow-lg shadow-blue-600/35 hover:shadow-blue-500/50 hover:scale-[1.02] transition-all duration-200 border-0">
             <a href={APP_URL} data-testid="btn-hero-primary">Try free for 2 weeks <ArrowRight className="ml-2 w-4 h-4" /></a>
           </Button>
-          <Button asChild variant="outline" size="lg" className="border-white/20 text-white hover:bg-white/10 w-full sm:w-auto text-base h-12 px-8 bg-transparent">
+          <Button asChild variant="outline" size="lg" className="border-white/15 text-white/90 hover:text-white hover:bg-white/8 w-full sm:w-auto text-base h-12 px-8 rounded-full bg-white/5 backdrop-blur-sm transition-all duration-200">
             <a href="#how-it-works" data-testid="btn-hero-secondary">See how it works</a>
           </Button>
         </motion.div>
@@ -474,8 +474,8 @@ const Pricing = () => {
             </div>
             <p className="text-slate-600 mb-8">Everything included. No per-user or per-device limits.</p>
             
-            <Button asChild size="lg" className="w-full bg-blue-600 hover:bg-blue-700 text-white mb-8 h-12">
-              <a href={APP_URL} data-testid="btn-pricing-standard">Start free for 2 weeks &rarr;</a>
+            <Button asChild size="lg" className="w-full bg-linear-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white mb-8 h-12 rounded-full shadow-lg shadow-blue-600/30 hover:shadow-blue-500/45 hover:scale-[1.01] transition-all duration-200 border-0">
+              <a href={APP_URL} data-testid="btn-pricing-standard">Start free for 2 weeks →</a>
             </Button>
             
             <ul className="space-y-4">
@@ -505,7 +505,7 @@ const Pricing = () => {
             </div>
             <p className="text-slate-400 mb-8">For multi-site operators and franchises needing dedicated support and custom flows.</p>
             
-            <Button asChild size="lg" variant="outline" className="w-full border-slate-700 text-white hover:bg-slate-800 hover:text-white mb-8 h-12 bg-transparent">
+            <Button asChild size="lg" className="w-full border border-slate-600/60 text-slate-200 hover:text-white hover:bg-white/8 mb-8 h-12 rounded-full bg-white/4 backdrop-blur-sm transition-all duration-200">
               <a href="#contact" data-testid="btn-pricing-enterprise">Contact Sales</a>
             </Button>
             
@@ -657,7 +657,7 @@ const Contact = () => {
                 />
               </div>
 
-              <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white h-11 text-base">
+              <Button type="submit" className="w-full bg-linear-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white h-11 text-base rounded-full shadow-md shadow-blue-600/30 hover:shadow-blue-500/40 transition-all duration-200 border-0">
                 Send Message
               </Button>
             </form>

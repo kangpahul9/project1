@@ -51,12 +51,16 @@ function BarcodeDialog({ item, onClose }: { item: MenuItem | null; onClose: () =
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
-    if (item?.barcode && svgRef.current) {
-      JsBarcode(svgRef.current, item.barcode, {
-        format: "CODE128", lineColor: "#000", width: 2, height: 72,
-        displayValue: true, fontSize: 13, margin: 10,
-      });
-    }
+    if (!item?.barcode) return;
+    const timer = setTimeout(() => {
+      if (svgRef.current) {
+        JsBarcode(svgRef.current, item.barcode, {
+          format: "CODE128", lineColor: "#000", width: 2, height: 72,
+          displayValue: true, fontSize: 13, margin: 10,
+        });
+      }
+    }, 80);
+    return () => clearTimeout(timer);
   }, [item]);
 
   const download = () => {
@@ -67,8 +71,11 @@ function BarcodeDialog({ item, onClose }: { item: MenuItem | null; onClose: () =
     const img = new Image();
     img.onload = () => {
       const c = document.createElement("canvas");
-      c.width = img.width; c.height = img.height;
-      c.getContext("2d")!.drawImage(img, 0, 0);
+      c.width = img.width || 300; c.height = img.height || 150;
+      const ctx = c.getContext("2d")!;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
       const a = document.createElement("a");
       a.download = `barcode-${item.name}.png`;

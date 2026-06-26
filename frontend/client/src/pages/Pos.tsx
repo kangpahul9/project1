@@ -102,32 +102,36 @@ function BarcodeViewDialog({
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
-    if (item?.barcode && svgRef.current) {
-      JsBarcode(svgRef.current, item.barcode, {
-        format: "CODE128",
-        lineColor: "#000",
-        width: 2,
-        height: 80,
-        displayValue: true,
-        fontSize: 14,
-        margin: 10,
-      });
-    }
+    if (!item?.barcode) return;
+    const timer = setTimeout(() => {
+      if (svgRef.current) {
+        JsBarcode(svgRef.current, item.barcode, {
+          format: "CODE128",
+          lineColor: "#000",
+          width: 2,
+          height: 80,
+          displayValue: true,
+          fontSize: 14,
+          margin: 10,
+        });
+      }
+    }, 80);
+    return () => clearTimeout(timer);
   }, [item]);
 
   const handleDownload = () => {
     if (!svgRef.current || !item) return;
-    const svg = svgRef.current;
-    const serializer = new XMLSerializer();
-    const svgStr = serializer.serializeToString(svg);
-    const canvas = document.createElement("canvas");
-    const img = new Image();
+    const svgStr = new XMLSerializer().serializeToString(svgRef.current);
     const blob = new Blob([svgStr], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
+    const img = new Image();
     img.onload = () => {
-      canvas.width = img.width;
-      canvas.height = img.height;
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width || 300;
+      canvas.height = img.height || 150;
       const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
       const link = document.createElement("a");

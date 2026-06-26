@@ -1,0 +1,16 @@
+{
+  "name": "KangPOS",
+  "short_name": "KangPOS",
+  "description": "Orders, payroll, cash management, staff scheduling, and AI-powered insights — all in one platform designed for Australian business.",
+  "start_url": "https://app.kangpos.com",
+  "display": "browser",
+  "background_color": "#0d1117",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

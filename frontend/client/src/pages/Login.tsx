@@ -183,7 +183,9 @@ export default function Login() {
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
             Need access?{" "}
-            <span className="text-primary font-medium cursor-pointer hover:underline">Contact your administrator</span>
+            <a href="mailto:pahulpreet2959@gmail.com" className="text-primary font-medium hover:underline">Email us</a>
+            {" or call "}
+            <a href="tel:+61434947020" className="text-primary font-medium hover:underline">+61 434 947 020</a>
           </p>
         </div>
       </div>

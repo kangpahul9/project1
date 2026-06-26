@@ -9,3 +9,6 @@ backend/uploads/
 *.zip
 frontend/attached_assets/
 .claude/
+# Landing site build artifacts
+landing/node_modules/
+landing/dist/

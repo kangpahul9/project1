@@ -115,7 +115,7 @@ describe("GET /payroll/batches", () => {
 describe("POST /payroll/pay", () => {
   const validPayload = {
     entries: [{ shift_id: 1, staff_id: 2, hours: 8, rate: 25, amount: 200 }],
-    payment_method: "cash",
+    payment_method: "paid",
     notes: "Weekly pay",
   };
 

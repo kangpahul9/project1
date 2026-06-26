@@ -234,13 +234,14 @@ const totalNum = totalCents / 100;
 
     await client.query("COMMIT");
 
-    if (result.hasDiscrepancy) {
+    if (result.hasDiscrepancy && req.settings?.notify_owner_email && req.settings?.owner_email) {
       sendDiscrepancyEmail({
+        toEmail: req.settings.owner_email,
         userName: staffName,
         difference: result.difference,
         countedCash: totalNum,
         expectedCash: result.expectedCash,
-        reason
+        reason,
       }).catch((err) => req.log.error({ err }, "Discrepancy email failed"));
     }
 

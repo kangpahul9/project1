@@ -35,16 +35,12 @@ export async function sendPasswordResetEmail({ toEmail, rawToken, restaurantName
   }
 }
 
-export async function sendDiscrepancyEmail(data) {
+export async function sendDiscrepancyEmail({ toEmail, userName, difference, countedCash, expectedCash, reason }) {
+  if (!toEmail) {
+    logger.warn("Discrepancy email skipped — no owner_email configured in settings");
+    return;
+  }
   try {
-    const {
-      userName,
-      difference,
-      countedCash,
-      expectedCash,
-      reason,
-    } = data;
-
     const html = `
       <h2>Cash Discrepancy Alert</h2>
       <p><strong>Closed By:</strong> ${userName}</p>
@@ -54,10 +50,9 @@ export async function sendDiscrepancyEmail(data) {
       <p><strong>Reason:</strong> ${reason}</p>
       <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
     `;
-
     await transporter.sendMail({
       from: `"KangPOS Alert" <${process.env.SYSTEM_EMAIL}>`,
-      to: process.env.OWNER_ALERT_EMAIL,
+      to: toEmail,
       subject: "⚠ Cash Discrepancy Detected",
       html,
     });

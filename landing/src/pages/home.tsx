@@ -454,30 +454,69 @@ const About = () => {
 };
 
 const Pricing = () => {
+  const [billing, setBilling] = useState<"weekly" | "yearly">("weekly");
+
   return (
     <section id="pricing" className="py-24 bg-slate-50">
       <div className="container mx-auto px-4 md:px-6">
-        <div className="max-w-3xl mx-auto text-center mb-16">
+        <div className="max-w-3xl mx-auto text-center mb-10">
           <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4 font-heading">Simple, transparent pricing</h2>
           <p className="text-lg text-slate-600">No complex tiers. No hidden fees. Just everything you need to run your business.</p>
         </div>
 
+        {/* Billing toggle */}
+        <div className="flex items-center justify-center gap-2 mb-12">
+          <div className="inline-flex items-center bg-slate-200 rounded-full p-1 gap-1">
+            <button
+              onClick={() => setBilling("weekly")}
+              className={`px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 ${
+                billing === "weekly" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              Weekly
+            </button>
+            <button
+              onClick={() => setBilling("yearly")}
+              className={`px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${
+                billing === "yearly" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              Yearly
+              <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-bold">Save 14%</span>
+            </button>
+          </div>
+        </div>
+
         <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-          {/* Main Plan */}
+          {/* Standard Plan */}
           <div className="bg-white rounded-3xl shadow-xl border border-blue-100 p-8 relative overflow-hidden">
             <div className="absolute top-0 right-0 bg-blue-600 text-white text-xs font-bold px-4 py-1 rounded-bl-lg uppercase tracking-wider">Most Popular</div>
-            
+
             <h3 className="text-2xl font-bold text-slate-900 font-heading">Standard</h3>
-            <div className="mt-4 mb-6">
-              <span className="text-5xl font-extrabold text-slate-900 font-heading">$29</span>
-              <span className="text-slate-500 font-medium"> / week</span>
+            <div className="mt-4 mb-1">
+              {billing === "weekly" ? (
+                <>
+                  <span className="text-5xl font-extrabold text-slate-900 font-heading">$29</span>
+                  <span className="text-slate-500 font-medium"> / admin / week</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-5xl font-extrabold text-slate-900 font-heading">$1,299</span>
+                  <span className="text-slate-500 font-medium"> / year</span>
+                </>
+              )}
             </div>
-            <p className="text-slate-600 mb-8">Everything included. No per-user or per-device limits.</p>
-            
+            {billing === "yearly" ? (
+              <p className="text-green-600 text-sm font-medium mb-5">Flat rate — all admins included. Save ~$209/admin vs weekly.</p>
+            ) : (
+              <p className="text-slate-400 text-sm mb-5">Billed weekly per admin account.</p>
+            )}
+            <p className="text-slate-600 mb-8">Everything included. No device limits.</p>
+
             <Button asChild size="lg" className="w-full bg-linear-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white mb-8 h-12 rounded-full shadow-lg shadow-blue-600/30 hover:shadow-blue-500/45 hover:scale-[1.01] transition-all duration-200 border-0">
               <a href={APP_URL} data-testid="btn-pricing-standard">Start free for 2 weeks →</a>
             </Button>
-            
+
             <ul className="space-y-4">
               {[
                 "Unlimited orders & cash management",
@@ -504,11 +543,11 @@ const Pricing = () => {
               <span className="text-4xl font-bold font-heading">Custom pricing</span>
             </div>
             <p className="text-slate-400 mb-8">For multi-site operators and franchises needing dedicated support and custom flows.</p>
-            
+
             <Button asChild size="lg" className="w-full border border-slate-600/60 text-slate-200 hover:text-white hover:bg-white/8 mb-8 h-12 rounded-full bg-white/4 backdrop-blur-sm transition-all duration-200">
               <a href="#contact" data-testid="btn-pricing-enterprise">Contact Sales</a>
             </Button>
-            
+
             <ul className="space-y-4 flex-1">
               <li className="flex items-start gap-3">
                 <Check className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />

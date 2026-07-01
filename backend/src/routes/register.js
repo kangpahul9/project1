@@ -16,16 +16,39 @@ const registerLimiter = rateLimit({
 });
 
 /* =========================================
+   GET /api/register/check-uid?uid=xxx
+   Public — check if a business UID is available
+========================================= */
+router.get("/check-uid", async (req, res, next) => {
+  try {
+    const { uid } = req.query;
+    if (!uid || !/^[a-z0-9-]{3,30}$/.test(uid)) {
+      return res.json({ available: false });
+    }
+    const result = await pool.query(
+      `SELECT id FROM restaurants WHERE restaurant_uid = $1`,
+      [uid]
+    );
+    res.json({ available: result.rows.length === 0 });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* =========================================
    POST /api/register
    Public — create account + Stripe customer + SetupIntent
 ========================================= */
 router.post("/", registerLimiter, async (req, res, next) => {
   const client = await pool.connect();
   try {
-    const { businessName, ownerName, email, password, phone, plan } = req.body;
+    const { businessUid, businessName, ownerName, email, password, phone, plan } = req.body;
 
-    if (!businessName?.trim() || !ownerName?.trim() || !email?.trim() || !password || !plan) {
+    if (!businessUid?.trim() || !businessName?.trim() || !ownerName?.trim() || !email?.trim() || !password || !plan) {
       return res.status(400).json({ message: "All fields are required." });
+    }
+    if (!/^[a-z0-9-]{3,30}$/.test(businessUid)) {
+      return res.status(400).json({ message: "Business ID must be 3–30 characters: lowercase letters, numbers, and hyphens only." });
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ message: "Invalid email address." });
@@ -39,6 +62,16 @@ router.post("/", registerLimiter, async (req, res, next) => {
 
     await client.query("BEGIN");
 
+    // Check UID not already taken
+    const uidCheck = await client.query(
+      `SELECT id FROM restaurants WHERE restaurant_uid = $1`,
+      [businessUid]
+    );
+    if (uidCheck.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ message: "This Business ID is already taken. Please choose another." });
+    }
+
     // Check email not already used
     const existing = await client.query(
       `SELECT id FROM users WHERE email = $1`,
@@ -49,8 +82,8 @@ router.post("/", registerLimiter, async (req, res, next) => {
       return res.status(409).json({ message: "An account with this email already exists." });
     }
 
-    // Create restaurant
-    const restaurantUid = randomBytes(6).toString("hex");
+    // Use the user-chosen UID
+    const restaurantUid = businessUid;
     const restaurantRes = await client.query(
       `INSERT INTO restaurants (restaurant_uid, name, phone, subscription_status, subscription_valid_till)
        VALUES ($1, $2, $3, 'trial', NOW() + INTERVAL '14 days')

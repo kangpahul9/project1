@@ -48,14 +48,31 @@ const PLANS = [
 
 /* ─── Step 1: Business & Account Info ─── */
 function StepDetails({ data, onChange, onNext }: {
-  data: { businessName: string; ownerName: string; email: string; phone: string; password: string; confirm: string };
+  data: { businessUid: string; businessName: string; ownerName: string; email: string; phone: string; password: string; confirm: string };
   onChange: (k: string, v: string) => void;
   onNext: () => void;
 }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [checkingUid, setCheckingUid] = useState(false);
 
-  const validate = () => {
+  const validate = async () => {
     const e: Record<string, string> = {};
+    if (!data.businessUid.trim()) {
+      e.businessUid = "Required";
+    } else if (!/^[a-z0-9-]{3,30}$/.test(data.businessUid)) {
+      e.businessUid = "3–30 chars: lowercase letters, numbers, hyphens only";
+    } else {
+      setCheckingUid(true);
+      try {
+        const res = await fetch(`${API_BASE}/api/register/check-uid?uid=${encodeURIComponent(data.businessUid)}`);
+        const json = await res.json();
+        if (!json.available) e.businessUid = "This ID is already taken — try another";
+      } catch {
+        // network error — let backend handle it on submit
+      } finally {
+        setCheckingUid(false);
+      }
+    }
     if (!data.businessName.trim()) e.businessName = "Required";
     if (!data.ownerName.trim()) e.ownerName = "Required";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) e.email = "Valid email required";
@@ -82,6 +99,23 @@ function StepDetails({ data, onChange, onNext }: {
 
   return (
     <div className="space-y-4">
+      <div className="space-y-1.5">
+        <Label htmlFor="businessUid" className="text-slate-300 text-sm">Business ID <span className="text-slate-500 font-normal">(used to log in)</span></Label>
+        <Input
+          id="businessUid"
+          value={data.businessUid}
+          onChange={e => onChange("businessUid", e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+          placeholder="e.g. acme-cafe"
+          className={cn(
+            "bg-white/10 border-white/20 text-white placeholder:text-slate-500 focus:border-blue-400 focus:ring-blue-400/30 font-mono",
+            errors.businessUid && "border-red-400"
+          )}
+        />
+        {errors.businessUid
+          ? <p className="text-xs text-red-400">{errors.businessUid}</p>
+          : <p className="text-xs text-slate-500">Lowercase letters, numbers and hyphens only. You'll use this every time you log in.</p>
+        }
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {field("Business name", "businessName", "text", "Acme Café")}
         {field("Your name", "ownerName", "text", "Sarah Johnson")}
@@ -99,9 +133,10 @@ function StepDetails({ data, onChange, onNext }: {
       </div>
       <Button
         className="w-full bg-blue-500 hover:bg-blue-400 text-white h-11 rounded-full font-semibold mt-2"
-        onClick={() => validate() && onNext()}
+        disabled={checkingUid}
+        onClick={async () => { if (await validate()) onNext(); }}
       >
-        Continue <ArrowRight className="ml-2 w-4 h-4" />
+        {checkingUid ? <><Loader2 className="mr-2 w-4 h-4 animate-spin" /> Checking…</> : <>Continue <ArrowRight className="ml-2 w-4 h-4" /></>}
       </Button>
     </div>
   );
@@ -170,7 +205,7 @@ function StepPlan({ selected, onSelect, onNext, onBack }: {
 function StepPayment({ formData, onBack, onSuccess }: {
   formData: any;
   onBack: () => void;
-  onSuccess: () => void;
+  onSuccess: (uid: string) => void;
 }) {
   const stripe = useStripe();
   const elements = useElements();
@@ -188,6 +223,7 @@ function StepPayment({ formData, onBack, onSuccess }: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          businessUid: formData.businessUid,
           businessName: formData.businessName,
           ownerName: formData.ownerName,
           email: formData.email,
@@ -228,7 +264,7 @@ function StepPayment({ formData, onBack, onSuccess }: {
         }
       }
 
-      onSuccess();
+      onSuccess(data.restaurantUid || formData.businessUid);
     } catch (err: any) {
       setError(err.message || "Something went wrong. Please try again.");
     } finally {
@@ -289,18 +325,43 @@ function StepPayment({ formData, onBack, onSuccess }: {
 }
 
 /* ─── Success Screen ─── */
-function SuccessScreen() {
+function SuccessScreen({ uid }: { uid: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(uid);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
   return (
     <div className="text-center py-4">
       <div className="w-16 h-16 bg-emerald-500/20 border border-emerald-400/30 rounded-full flex items-center justify-center mx-auto mb-4">
         <Check className="w-8 h-8 text-emerald-400" />
       </div>
       <h2 className="text-2xl font-bold text-white mb-2">You're all set!</h2>
-      <p className="text-slate-400 mb-6">Your 14-day free trial has started. No charge until it ends.</p>
-      <Button asChild className="bg-blue-500 hover:bg-blue-400 text-white rounded-full px-8 h-11 font-semibold">
+      <p className="text-slate-400 mb-5">Your 14-day free trial has started. No charge until it ends.</p>
+
+      <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-5 text-left">
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Your Business UID</p>
+        <p className="text-xs text-slate-500 mb-3">You'll need this to log in along with your email and password.</p>
+        <div className="flex items-center gap-2">
+          <input
+            readOnly
+            value={uid}
+            className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm font-mono text-white select-all"
+          />
+          <button
+            onClick={copy}
+            className="shrink-0 px-3 py-2 rounded-lg bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-semibold hover:bg-blue-500/30 transition-colors"
+          >
+            {copied ? "Copied!" : "Copy"}
+          </button>
+        </div>
+      </div>
+
+      <Button asChild className="w-full bg-blue-500 hover:bg-blue-400 text-white rounded-full h-11 font-semibold">
         <a href={APP_URL}>Open KangPOS <ArrowRight className="ml-2 w-4 h-4" /></a>
       </Button>
-      <p className="text-xs text-slate-500 mt-4">Log in with the email and password you just created.</p>
+      <p className="text-xs text-slate-500 mt-3">Log in with your Business UID, email, and password.</p>
     </div>
   );
 }
@@ -309,8 +370,9 @@ function SuccessScreen() {
 export default function Signup() {
   const [step, setStep] = useState(0);
   const [done, setDone] = useState(false);
+  const [registeredUid, setRegisteredUid] = useState("");
   const [form, setForm] = useState({
-    businessName: "", ownerName: "", email: "", phone: "",
+    businessUid: "", businessName: "", ownerName: "", email: "", phone: "",
     password: "", confirm: "", plan: "weekly",
   });
 
@@ -370,7 +432,7 @@ export default function Signup() {
 
           {/* Right — form card */}
           <div className="bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 p-6 sm:p-8">
-            {done ? <SuccessScreen /> : (
+            {done ? <SuccessScreen uid={registeredUid} /> : (
               <>
                 {/* Step indicators */}
                 <div className="flex items-center gap-2 mb-7">
@@ -411,10 +473,10 @@ export default function Signup() {
                 {step === 2 && (
                   stripePromise ? (
                     <Elements stripe={stripePromise}>
-                      <StepPayment formData={form} onBack={() => setStep(1)} onSuccess={() => setDone(true)} />
+                      <StepPayment formData={form} onBack={() => setStep(1)} onSuccess={(uid) => { setRegisteredUid(uid); setDone(true); }} />
                     </Elements>
                   ) : (
-                    <StepPaymentFallback formData={form} onBack={() => setStep(1)} onSuccess={() => setDone(true)} />
+                    <StepPaymentFallback formData={form} onBack={() => setStep(1)} onSuccess={(uid) => { setRegisteredUid(uid); setDone(true); }} />
                   )
                 )}
               </>
@@ -430,7 +492,7 @@ export default function Signup() {
 function StepPaymentFallback({ formData, onBack, onSuccess }: {
   formData: any;
   onBack: () => void;
-  onSuccess: () => void;
+  onSuccess: (uid: string) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -443,6 +505,7 @@ function StepPaymentFallback({ formData, onBack, onSuccess }: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          businessUid: formData.businessUid,
           businessName: formData.businessName,
           ownerName: formData.ownerName,
           email: formData.email,
@@ -454,7 +517,7 @@ function StepPaymentFallback({ formData, onBack, onSuccess }: {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Signup failed");
       localStorage.setItem("token", data.token);
-      onSuccess();
+      onSuccess(data.restaurantUid || formData.businessUid);
     } catch (err: any) {
       setError(err.message || "Something went wrong.");
     } finally {

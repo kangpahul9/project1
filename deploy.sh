@@ -34,7 +34,7 @@ echo "── Building landing site ───────────────
 cd "$LANDING_ROOT"
 npm ci
 VITE_STRIPE_PUBLISHABLE_KEY=pk_test_51ToEn9J6kldiHUNijpzYQE9F3JW6esjGx8wLVxa5ZFk2IuQHPyhO4tjs6wYcjHB1msSHqrLZgchEArlvGGTGoUmf00KtD4SSga \
-VITE_API_URL=https://kangpos.com \
+VITE_API_URL=https://app.kangpos.com \
 npm run build
 
 echo "── Deploying frontend static files ─────────────────────────"

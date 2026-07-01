@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Check, ArrowRight, ArrowLeft, Loader2, ShieldCheck, Smartphone, BarChart2, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const API_BASE = import.meta.env.VITE_API_URL || "https://api.kangpos.com";
+const API_BASE = import.meta.env.VITE_API_URL || "https://app.kangpos.com";
 const APP_URL  = "https://app.kangpos.com";
 const STRIPE_PK = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "";
 
@@ -15,12 +15,12 @@ const stripePromise = STRIPE_PK ? loadStripe(STRIPE_PK) : null;
 
 const Logo = () => (
   <div className="flex items-center gap-2">
-    <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center relative overflow-hidden">
+    <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center relative overflow-hidden">
       <div className="absolute left-[8px] top-[6px] bottom-[6px] w-[3px] bg-white rounded-full" />
       <div className="absolute left-[10px] top-[14px] w-[12px] h-[3px] bg-white rounded-full origin-left -rotate-45" />
       <div className="absolute left-[10px] top-[14px] w-[14px] h-[3px] bg-white rounded-full origin-left rotate-45" />
     </div>
-    <span className="text-xl font-bold tracking-tight text-slate-900">KangPOS</span>
+    <span className="text-xl font-bold tracking-tight text-white">KangPOS</span>
   </div>
 );
 
@@ -65,47 +65,42 @@ function StepDetails({ data, onChange, onNext }: {
     return !Object.keys(e).length;
   };
 
+  const field = (label: string, id: keyof typeof data, type = "text", placeholder = "") => (
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className="text-slate-300 text-sm">{label}</Label>
+      <Input
+        id={id} type={type} value={data[id]} placeholder={placeholder}
+        onChange={e => onChange(id, e.target.value)}
+        className={cn(
+          "bg-white/10 border-white/20 text-white placeholder:text-slate-500 focus:border-blue-400 focus:ring-blue-400/30",
+          errors[id] && "border-red-400"
+        )}
+      />
+      {errors[id] && <p className="text-xs text-red-400">{errors[id]}</p>}
+    </div>
+  );
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="businessName">Business name</Label>
-          <Input id="businessName" value={data.businessName} onChange={e => onChange("businessName", e.target.value)}
-            placeholder="Acme Café" className={errors.businessName ? "border-red-400" : ""} />
-          {errors.businessName && <p className="text-xs text-red-500">{errors.businessName}</p>}
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="ownerName">Your name</Label>
-          <Input id="ownerName" value={data.ownerName} onChange={e => onChange("ownerName", e.target.value)}
-            placeholder="Sarah Johnson" className={errors.ownerName ? "border-red-400" : ""} />
-          {errors.ownerName && <p className="text-xs text-red-500">{errors.ownerName}</p>}
-        </div>
+        {field("Business name", "businessName", "text", "Acme Café")}
+        {field("Your name", "ownerName", "text", "Sarah Johnson")}
       </div>
+      {field("Email address", "email", "email", "you@business.com")}
       <div className="space-y-1.5">
-        <Label htmlFor="email">Email address</Label>
-        <Input id="email" type="email" value={data.email} onChange={e => onChange("email", e.target.value)}
-          placeholder="you@business.com" className={errors.email ? "border-red-400" : ""} />
-        {errors.email && <p className="text-xs text-red-500">{errors.email}</p>}
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="phone">Phone <span className="text-slate-400 font-normal">(optional)</span></Label>
-        <Input id="phone" type="tel" value={data.phone} onChange={e => onChange("phone", e.target.value)} placeholder="+61 4xx xxx xxx" />
+        <Label htmlFor="phone" className="text-slate-300 text-sm">Phone <span className="text-slate-500 font-normal">(optional)</span></Label>
+        <Input id="phone" type="tel" value={data.phone} onChange={e => onChange("phone", e.target.value)}
+          placeholder="+61 4xx xxx xxx"
+          className="bg-white/10 border-white/20 text-white placeholder:text-slate-500 focus:border-blue-400 focus:ring-blue-400/30" />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="password">Password</Label>
-          <Input id="password" type="password" value={data.password} onChange={e => onChange("password", e.target.value)}
-            placeholder="Min. 8 characters" className={errors.password ? "border-red-400" : ""} />
-          {errors.password && <p className="text-xs text-red-500">{errors.password}</p>}
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="confirm">Confirm password</Label>
-          <Input id="confirm" type="password" value={data.confirm} onChange={e => onChange("confirm", e.target.value)}
-            placeholder="Repeat password" className={errors.confirm ? "border-red-400" : ""} />
-          {errors.confirm && <p className="text-xs text-red-500">{errors.confirm}</p>}
-        </div>
+        {field("Password", "password", "password", "Min. 8 characters")}
+        {field("Confirm password", "confirm", "password", "Repeat password")}
       </div>
-      <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white h-11 rounded-full" onClick={() => validate() && onNext()}>
+      <Button
+        className="w-full bg-blue-500 hover:bg-blue-400 text-white h-11 rounded-full font-semibold mt-2"
+        onClick={() => validate() && onNext()}
+      >
         Continue <ArrowRight className="ml-2 w-4 h-4" />
       </Button>
     </div>
@@ -126,44 +121,44 @@ function StepPlan({ selected, onSelect, onNext, onBack }: {
           className={cn(
             "w-full text-left p-5 rounded-2xl border-2 transition-all",
             selected === plan.id
-              ? "border-blue-500 bg-blue-50"
-              : "border-slate-200 hover:border-slate-300 bg-white"
+              ? "border-blue-400 bg-blue-500/20"
+              : "border-white/10 hover:border-white/20 bg-white/5"
           )}
         >
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="font-semibold text-slate-900">{plan.name}</span>
+                <span className="font-semibold text-white">{plan.name}</span>
                 {plan.badge && (
-                  <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{plan.badge}</span>
+                  <span className="text-xs font-semibold bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30">{plan.badge}</span>
                 )}
               </div>
               <div className="flex items-baseline gap-1">
-                <span className="text-2xl font-bold text-slate-900">{plan.price}</span>
-                <span className="text-slate-500 text-sm">{plan.per}</span>
+                <span className="text-2xl font-bold text-white">{plan.price}</span>
+                <span className="text-slate-400 text-sm">{plan.per}</span>
               </div>
             </div>
             <div className={cn(
               "w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-1",
-              selected === plan.id ? "border-blue-500 bg-blue-500" : "border-slate-300"
+              selected === plan.id ? "border-blue-400 bg-blue-500" : "border-slate-500"
             )}>
               {selected === plan.id && <Check className="w-3 h-3 text-white" />}
             </div>
           </div>
           <ul className="mt-3 space-y-1">
             {plan.features.map(f => (
-              <li key={f} className="text-sm text-slate-600 flex items-center gap-2">
-                <Check className="w-3.5 h-3.5 text-blue-500 shrink-0" /> {f}
+              <li key={f} className="text-sm text-slate-400 flex items-center gap-2">
+                <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" /> {f}
               </li>
             ))}
           </ul>
         </button>
       ))}
       <div className="flex gap-3 pt-2">
-        <Button variant="outline" className="flex-1 rounded-full" onClick={onBack}>
+        <Button variant="outline" className="flex-1 rounded-full border-white/20 text-slate-300 hover:bg-white/10 hover:text-white" onClick={onBack}>
           <ArrowLeft className="mr-2 w-4 h-4" /> Back
         </Button>
-        <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-full" onClick={onNext} disabled={!selected}>
+        <Button className="flex-1 bg-blue-500 hover:bg-blue-400 text-white rounded-full font-semibold" onClick={onNext} disabled={!selected}>
           Continue <ArrowRight className="ml-2 w-4 h-4" />
         </Button>
       </div>
@@ -175,7 +170,7 @@ function StepPlan({ selected, onSelect, onNext, onBack }: {
 function StepPayment({ formData, onBack, onSuccess }: {
   formData: any;
   onBack: () => void;
-  onSuccess: (uid: string) => void;
+  onSuccess: () => void;
 }) {
   const stripe = useStripe();
   const elements = useElements();
@@ -189,7 +184,6 @@ function StepPayment({ formData, onBack, onSuccess }: {
     setError("");
 
     try {
-      // 1. Create account + get SetupIntent client secret
       const res = await fetch(`${API_BASE}/api/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -206,10 +200,8 @@ function StepPayment({ formData, onBack, onSuccess }: {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Signup failed");
 
-      // Save token immediately so user is logged in
       localStorage.setItem("token", data.token);
 
-      // 2. Confirm card setup (collect payment method for after-trial charging)
       if (data.clientSecret && stripe) {
         const cardElement = elements.getElement(CardElement);
         if (cardElement) {
@@ -222,7 +214,6 @@ function StepPayment({ formData, onBack, onSuccess }: {
 
           if (stripeErr) throw new Error(stripeErr.message);
 
-          // 3. Tell backend to create subscription
           if (setupIntent?.payment_method) {
             await fetch(`${API_BASE}/api/register/confirm-payment`, {
               method: "POST",
@@ -237,7 +228,7 @@ function StepPayment({ formData, onBack, onSuccess }: {
         }
       }
 
-      onSuccess(data.restaurantUid);
+      onSuccess();
     } catch (err: any) {
       setError(err.message || "Something went wrong. Please try again.");
     } finally {
@@ -249,22 +240,27 @@ function StepPayment({ formData, onBack, onSuccess }: {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
-        <p className="text-sm font-semibold text-blue-800 mb-0.5">
+      <div className="bg-blue-500/20 border border-blue-400/30 rounded-2xl p-4">
+        <p className="text-sm font-semibold text-blue-300 mb-0.5">
           {selectedPlan?.name} plan — 14-day free trial
         </p>
-        <p className="text-xs text-blue-600">
+        <p className="text-xs text-slate-400">
           {selectedPlan?.price}{selectedPlan?.per}. No charge until your trial ends. Cancel anytime.
         </p>
       </div>
 
       <div className="space-y-2">
-        <Label>Card details</Label>
-        <div className="border border-slate-200 rounded-xl p-3.5 bg-white focus-within:ring-2 focus-within:ring-blue-500/30 focus-within:border-blue-400 transition-all">
+        <Label className="text-slate-300 text-sm">Card details</Label>
+        <div className="border border-white/20 rounded-xl p-3.5 bg-white/10 focus-within:ring-2 focus-within:ring-blue-400/30 focus-within:border-blue-400 transition-all">
           <CardElement options={{
             style: {
-              base: { fontSize: "15px", color: "#0f172a", fontFamily: "inherit", "::placeholder": { color: "#94a3b8" } },
-              invalid: { color: "#ef4444" },
+              base: {
+                fontSize: "15px",
+                color: "#f1f5f9",
+                fontFamily: "inherit",
+                "::placeholder": { color: "#64748b" },
+              },
+              invalid: { color: "#f87171" },
             },
             hidePostalCode: true,
           }} />
@@ -272,19 +268,19 @@ function StepPayment({ formData, onBack, onSuccess }: {
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-600">{error}</div>
+        <div className="bg-red-500/20 border border-red-400/30 rounded-xl p-3 text-sm text-red-400">{error}</div>
       )}
 
       <div className="flex items-center gap-2 text-xs text-slate-500">
-        <ShieldCheck className="w-4 h-4 text-slate-400 shrink-0" />
+        <ShieldCheck className="w-4 h-4 shrink-0" />
         Secured by Stripe. Your card details are never stored on our servers.
       </div>
 
       <div className="flex gap-3">
-        <Button type="button" variant="outline" className="flex-1 rounded-full" onClick={onBack} disabled={loading}>
+        <Button type="button" variant="outline" className="flex-1 rounded-full border-white/20 text-slate-300 hover:bg-white/10 hover:text-white" onClick={onBack} disabled={loading}>
           <ArrowLeft className="mr-2 w-4 h-4" /> Back
         </Button>
-        <Button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-full" disabled={loading || !stripe}>
+        <Button type="submit" className="flex-1 bg-blue-500 hover:bg-blue-400 text-white rounded-full font-semibold" disabled={loading || !stripe}>
           {loading ? <><Loader2 className="mr-2 w-4 h-4 animate-spin" /> Setting up…</> : "Start free trial"}
         </Button>
       </div>
@@ -296,15 +292,15 @@ function StepPayment({ formData, onBack, onSuccess }: {
 function SuccessScreen() {
   return (
     <div className="text-center py-4">
-      <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-        <Check className="w-8 h-8 text-emerald-600" />
+      <div className="w-16 h-16 bg-emerald-500/20 border border-emerald-400/30 rounded-full flex items-center justify-center mx-auto mb-4">
+        <Check className="w-8 h-8 text-emerald-400" />
       </div>
-      <h2 className="text-2xl font-bold text-slate-900 mb-2">You're all set!</h2>
-      <p className="text-slate-500 mb-6">Your 14-day free trial has started. No charge until it ends.</p>
-      <Button asChild className="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-8 h-11">
+      <h2 className="text-2xl font-bold text-white mb-2">You're all set!</h2>
+      <p className="text-slate-400 mb-6">Your 14-day free trial has started. No charge until it ends.</p>
+      <Button asChild className="bg-blue-500 hover:bg-blue-400 text-white rounded-full px-8 h-11 font-semibold">
         <a href={APP_URL}>Open KangPOS <ArrowRight className="ml-2 w-4 h-4" /></a>
       </Button>
-      <p className="text-xs text-slate-400 mt-4">You'll be asked to log in with the email and password you just created.</p>
+      <p className="text-xs text-slate-500 mt-4">Log in with the email and password you just created.</p>
     </div>
   );
 }
@@ -328,46 +324,52 @@ export default function Signup() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen bg-[#0a0f1e] flex flex-col">
       {/* Navbar */}
-      <header className="bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
+      <header className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
         <a href="/"><Logo /></a>
-        <a href={APP_URL} className="text-sm text-slate-500 hover:text-slate-700 transition-colors">Already have an account? Log in →</a>
+        <a href={APP_URL} className="text-sm text-slate-400 hover:text-white transition-colors">
+          Already have an account? Log in →
+        </a>
       </header>
 
-      <div className="flex-1 flex items-start justify-center px-4 py-10">
-        <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
+      <div className="flex-1 flex items-start justify-center px-4 py-12">
+        <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
 
           {/* Left — why KangPOS */}
-          <div className="hidden lg:block pt-4">
-            <p className="text-sm font-semibold text-blue-600 uppercase tracking-wide mb-3">Start free for 14 days</p>
-            <h1 className="text-3xl font-bold text-slate-900 mb-4 leading-snug">
-              The gen-next POS system for modern business.
+          <div className="hidden lg:block pt-2">
+            <span className="inline-block text-xs font-semibold text-blue-400 uppercase tracking-widest bg-blue-500/10 border border-blue-500/20 px-3 py-1 rounded-full mb-6">
+              Free for 14 days
+            </span>
+            <h1 className="text-4xl font-bold text-white mb-4 leading-tight">
+              The <span className="text-blue-400">gen-next</span> POS system<br />for modern business.
             </h1>
-            <p className="text-slate-500 mb-8">No credit card surprises. Cancel anytime. Set up in under 10 minutes.</p>
+            <p className="text-slate-400 mb-10 text-lg">No credit card surprises. Cancel anytime.<br />Set up in under 10 minutes.</p>
             <ul className="space-y-4">
               {whyItems.map(({ icon: Icon, text }) => (
                 <li key={text} className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-                    <Icon className="w-4 h-4 text-blue-600" />
+                  <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
+                    <Icon className="w-4 h-4 text-blue-400" />
                   </div>
-                  <span className="text-slate-700 font-medium">{text}</span>
+                  <span className="text-slate-300 font-medium">{text}</span>
                 </li>
               ))}
             </ul>
-            <div className="mt-10 border-t border-slate-100 pt-8">
-              <p className="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-3">Trusted by businesses across Australia</p>
+            <div className="mt-10 border-t border-white/10 pt-8">
+              <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-3">Trusted by businesses across Australia</p>
               <div className="flex items-center gap-1">
                 {[...Array(5)].map((_, i) => (
-                  <svg key={i} className="w-4 h-4 text-amber-400 fill-current" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                  <svg key={i} className="w-4 h-4 text-amber-400 fill-current" viewBox="0 0 20 20">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
                 ))}
                 <span className="text-sm text-slate-500 ml-2">5.0 from early customers</span>
               </div>
             </div>
           </div>
 
-          {/* Right — form */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 sm:p-8">
+          {/* Right — form card */}
+          <div className="bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 p-6 sm:p-8">
             {done ? <SuccessScreen /> : (
               <>
                 {/* Step indicators */}
@@ -376,24 +378,26 @@ export default function Signup() {
                     <div key={s} className="flex items-center gap-2">
                       <div className={cn(
                         "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all",
-                        i < step ? "bg-blue-600 text-white" :
-                        i === step ? "bg-blue-600 text-white" :
-                        "bg-slate-100 text-slate-400"
+                        i < step ? "bg-blue-500 text-white" :
+                        i === step ? "bg-blue-500 text-white" :
+                        "bg-white/10 text-slate-500"
                       )}>
                         {i < step ? <Check className="w-3.5 h-3.5" /> : i + 1}
                       </div>
-                      <span className={cn("text-xs font-medium hidden sm:block", i === step ? "text-slate-900" : "text-slate-400")}>{s}</span>
-                      {i < STEPS.length - 1 && <div className={cn("flex-1 h-px w-6", i < step ? "bg-blue-300" : "bg-slate-100")} />}
+                      <span className={cn("text-xs font-medium hidden sm:block", i === step ? "text-white" : "text-slate-600")}>{s}</span>
+                      {i < STEPS.length - 1 && (
+                        <div className={cn("flex-1 h-px w-6", i < step ? "bg-blue-500" : "bg-white/10")} />
+                      )}
                     </div>
                   ))}
                 </div>
 
-                <h2 className="text-xl font-bold text-slate-900 mb-1">
+                <h2 className="text-xl font-bold text-white mb-1">
                   {step === 0 && "Create your account"}
                   {step === 1 && "Pick a plan"}
                   {step === 2 && "Add payment details"}
                 </h2>
-                <p className="text-sm text-slate-500 mb-6">
+                <p className="text-sm text-slate-400 mb-6">
                   {step === 0 && "Free for 14 days — no credit card needed to get started."}
                   {step === 1 && "You won't be charged until your trial ends."}
                   {step === 2 && "Your card is saved but not charged until after your 14-day trial."}
@@ -410,7 +414,6 @@ export default function Signup() {
                       <StepPayment formData={form} onBack={() => setStep(1)} onSuccess={() => setDone(true)} />
                     </Elements>
                   ) : (
-                    // No Stripe configured — create account without payment
                     <StepPaymentFallback formData={form} onBack={() => setStep(1)} onSuccess={() => setDone(true)} />
                   )
                 )}
@@ -463,18 +466,18 @@ function StepPaymentFallback({ formData, onBack, onSuccess }: {
 
   return (
     <div className="space-y-5">
-      <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
-        <p className="text-sm font-semibold text-blue-800 mb-0.5">
+      <div className="bg-blue-500/20 border border-blue-400/30 rounded-2xl p-4">
+        <p className="text-sm font-semibold text-blue-300 mb-0.5">
           {selectedPlan?.name} plan — 14-day free trial
         </p>
-        <p className="text-xs text-blue-600">No payment required to start. You'll be contacted to set up billing after your trial.</p>
+        <p className="text-xs text-slate-400">No payment required to start. You'll be contacted to set up billing after your trial.</p>
       </div>
-      {error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-600">{error}</div>}
+      {error && <div className="bg-red-500/20 border border-red-400/30 rounded-xl p-3 text-sm text-red-400">{error}</div>}
       <div className="flex gap-3">
-        <Button variant="outline" className="flex-1 rounded-full" onClick={onBack} disabled={loading}>
+        <Button variant="outline" className="flex-1 rounded-full border-white/20 text-slate-300 hover:bg-white/10 hover:text-white" onClick={onBack} disabled={loading}>
           <ArrowLeft className="mr-2 w-4 h-4" /> Back
         </Button>
-        <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-full" onClick={handleSubmit} disabled={loading}>
+        <Button className="flex-1 bg-blue-500 hover:bg-blue-400 text-white rounded-full font-semibold" onClick={handleSubmit} disabled={loading}>
           {loading ? <><Loader2 className="mr-2 w-4 h-4 animate-spin" /> Creating account…</> : "Start free trial"}
         </Button>
       </div>

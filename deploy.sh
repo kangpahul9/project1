@@ -53,4 +53,4 @@ pm2 reload kangpos --update-env || pm2 start src/index.js --name kangpos
 echo "── Reloading nginx ──────────────────────────────────────────"
 sudo nginx -t && sudo systemctl reload nginx
 
-echo "✓ Deploy complete"
+echo "✓ Deploy complete — $(date)"

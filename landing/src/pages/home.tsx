@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { 
   Menu, X, ArrowRight, Check, Activity, Users, DollarSign, 
-  PieChart, Utensils, Coins, Calendar, Sparkles, BarChart, 
+  PieChart, Coins, Calendar, Sparkles, BarChart,
   FileSpreadsheet, Globe, Settings, Play, CheckCircle, 
   Clock, Shield, Heart, Mail, MessageSquare, MapPin 
 } from "lucide-react";
@@ -103,7 +103,7 @@ const DashboardMockup = () => (
       </div>
       <div className="space-y-1">
         <div className="flex items-center gap-3 px-2 py-2 bg-blue-600/20 text-blue-400 rounded-md text-sm font-medium"><Activity className="w-4 h-4" /> Dashboard</div>
-        <div className="flex items-center gap-3 px-2 py-2 text-slate-400 hover:text-slate-200 rounded-md text-sm font-medium"><Utensils className="w-4 h-4" /> Orders</div>
+        <div className="flex items-center gap-3 px-2 py-2 text-slate-400 hover:text-slate-200 rounded-md text-sm font-medium"><Activity className="w-4 h-4" /> Orders</div>
         <div className="flex items-center gap-3 px-2 py-2 text-slate-400 hover:text-slate-200 rounded-md text-sm font-medium"><Coins className="w-4 h-4" /> Cash Management</div>
         <div className="flex items-center gap-3 px-2 py-2 text-slate-400 hover:text-slate-200 rounded-md text-sm font-medium"><Users className="w-4 h-4" /> Staff & Roster</div>
         <div className="flex items-center gap-3 px-2 py-2 text-slate-400 hover:text-slate-200 rounded-md text-sm font-medium"><Sparkles className="w-4 h-4" /> AI Insights</div>
@@ -128,7 +128,7 @@ const DashboardMockup = () => (
           <div className="text-green-400 text-xs mt-1">+12% vs last week</div>
         </div>
         <div className="bg-slate-900 border border-white/5 p-4 rounded-lg">
-          <div className="text-slate-400 text-xs mb-1 flex items-center gap-2"><Utensils className="w-3 h-3" /> Orders</div>
+          <div className="text-slate-400 text-xs mb-1 flex items-center gap-2"><Activity className="w-3 h-3" /> Orders</div>
           <div className="text-white text-2xl font-bold font-heading">147</div>
           <div className="text-green-400 text-xs mt-1">42 Tables, 105 Orders</div>
         </div>
@@ -183,7 +183,7 @@ const Hero = () => {
           className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium"
         >
           <span className="flex h-2 w-2 rounded-full bg-blue-500"></span>
-          Introducing the gen-next POS system
+          Your business in your hands 24/7.
         </motion.div>
         
         <motion.h1 
@@ -192,7 +192,7 @@ const Hero = () => {
           transition={{ duration: 0.5, delay: 0.1 }}
           className="text-4xl md:text-6xl lg:text-7xl font-extrabold text-white tracking-tight mb-6 font-heading max-w-4xl mx-auto"
         >
-          The system that <span className="text-blue-500">changes the way</span> you manage your business.
+          Introducing the <span className="text-blue-500">gen-next</span> POS system.
         </motion.h1>
         
         <motion.p 
@@ -201,7 +201,7 @@ const Hero = () => {
           transition={{ duration: 0.5, delay: 0.2 }}
           className="text-lg md:text-xl text-slate-400 mb-10 max-w-2xl mx-auto"
         >
-          Your business at your phone. Orders, payroll, cash, staff scheduling, and AI insights — all in one place, built for the way modern business actually runs.
+          The system that changes the way you manage your business.
         </motion.p>
         
         <motion.div 
@@ -260,7 +260,7 @@ const Integrations = () => {
 
 const Features = () => {
   const features = [
-    { icon: <Utensils className="w-6 h-6" />, title: "Smart Orders", desc: "Dine-in, takeaway, delivery. Split bills, discounts, refunds—handled gracefully." },
+    { icon: <Activity className="w-6 h-6" />, title: "Smart Orders", desc: "Table orders, walk-ups, delivery. Split bills, discounts, refunds — handled gracefully." },
     { icon: <Coins className="w-6 h-6" />, title: "Cash Management", desc: "Denomination-based till tracking. Open/close business days with full audit trails." },
     { icon: <Users className="w-6 h-6" />, title: "Staff & Payroll", desc: "Payroll engine with roster integration, weekday/weekend rates, Xero sync. Advance tracking." },
     { icon: <Calendar className="w-6 h-6" />, title: "Roster & Scheduling", desc: "Build rosters, assign shifts, clock in/out. Actual hours sync to payroll automatically." },
@@ -314,7 +314,7 @@ const HowItWorks = () => {
         <div className="flex flex-col lg:flex-row items-center gap-16">
           <div className="lg:w-1/2">
             <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-6 font-heading">From open to close, simplified.</h2>
-            <p className="text-lg text-slate-600 mb-10">We mapped out the exact workflow of a busy hospitality venue and removed all the friction. Here's how a typical day looks with KangPOS.</p>
+            <p className="text-lg text-slate-600 mb-10">We mapped out the exact workflow of a busy business and removed all the friction. Here's how a typical day looks with KangPOS.</p>
             
             <div className="space-y-8">
               {steps.map((step, i) => (
@@ -591,7 +591,7 @@ const Contact = () => {
         <div className="grid lg:grid-cols-2 gap-16 max-w-6xl mx-auto">
           <div>
             <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-6 font-heading">Let's talk business.</h2>
-            <p className="text-lg text-slate-600 mb-10">Have questions about pricing, features, or how KangPOS can work for your specific venue? We're here to help.</p>
+            <p className="text-lg text-slate-600 mb-10">Have questions about pricing, features, or how KangPOS can work for your business? We're here to help.</p>
             
             <div className="space-y-6">
               <div className="flex items-start gap-4">

@@ -54,7 +54,7 @@ function BarcodeDialog({ item, onClose }: { item: MenuItem | null; onClose: () =
     if (!item?.barcode) return;
     const timer = setTimeout(() => {
       if (svgRef.current) {
-        JsBarcode(svgRef.current, item.barcode, {
+        JsBarcode(svgRef.current, item.barcode ?? "", {
           format: "CODE128", lineColor: "#000", width: 2, height: 72,
           displayValue: true, fontSize: 13, margin: 10,
         });
@@ -110,7 +110,10 @@ function BarcodeDialog({ item, onClose }: { item: MenuItem | null; onClose: () =
   return (
     <Dialog open={!!item} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>{item?.name} — Barcode</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>{item?.name} — Barcode</DialogTitle>
+          <DialogDescription>Scan or download the barcode for this item.</DialogDescription>
+        </DialogHeader>
         <div className="flex flex-col items-center gap-4 py-2">
           <svg ref={svgRef} />
           <p className="text-xs text-muted-foreground font-mono">{item?.barcode}</p>
@@ -704,6 +707,7 @@ export default function ManageMenu() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{editItem ? "Edit Menu Item" : "Add Menu Item"}</DialogTitle>
+            <DialogDescription>{editItem ? "Update the details for this menu item." : "Fill in the details to add a new item to the menu."}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <Input placeholder="Item name" value={fName} onChange={(e) => setFName(e.target.value)} />
@@ -825,6 +829,7 @@ export default function ManageMenu() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{editCat ? "Edit Category" : "Add Category"}</DialogTitle>
+            <DialogDescription>{editCat ? "Update this category." : "Create a new category to organise your menu."}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <Input placeholder="Category name" value={cName} onChange={(e) => setCName(e.target.value)} />
@@ -867,6 +872,7 @@ export default function ManageMenu() {
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editCombo ? "Edit Combo" : "Add Combo Offer"}</DialogTitle>
+            <DialogDescription>{editCombo ? "Update this combo offer." : "Bundle items together at a special price."}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <Input placeholder="Combo name" value={coName} onChange={(e) => setCoName(e.target.value)} />

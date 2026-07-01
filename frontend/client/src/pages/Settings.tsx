@@ -80,12 +80,12 @@ function SettingRow({
 
 export default function Settings() {
   const { data: settings } = useSettings();
-  const { mutate: updateSettings } = useUpdateSettings();
+  const { mutate: updateSettings, isPending: savingSettings } = useUpdateSettings();
   const { theme, setTheme } = useTheme();
 
   usePartners();
   const { data: comm } = useCommunicationSettings();
-  const { mutate: updateComm } = useUpdateCommunicationSettings();
+  const { mutate: updateComm, isPending: savingComm } = useUpdateCommunicationSettings();
 
   const [form, setForm] = useState<any>({
     use_business_day: false,
@@ -220,8 +220,8 @@ export default function Settings() {
               </SettingRow>
             </div>
 
-            <Button className="mt-5 w-full sm:w-auto" onClick={() => updateSettings(form)}>
-              Save System Settings
+            <Button className="mt-5 w-full sm:w-auto" disabled={savingSettings} onClick={() => updateSettings(form)}>
+              {savingSettings ? "Saving…" : "Save System Settings"}
             </Button>
           </SectionCard>
 
@@ -314,8 +314,8 @@ export default function Settings() {
               )}
             </div>
 
-            <Button className="mt-5 w-full sm:w-auto" onClick={() => updateSettings(form)}>
-              Save Payment Settings
+            <Button className="mt-5 w-full sm:w-auto" disabled={savingSettings} onClick={() => updateSettings(form)}>
+              {savingSettings ? "Saving…" : "Save Payment Settings"}
             </Button>
           </SectionCard>
 
@@ -348,8 +348,8 @@ export default function Settings() {
               </div>
             </div>
 
-            <Button className="mt-5 w-full sm:w-auto" onClick={() => updateComm(commForm)}>
-              Save Communication Settings
+            <Button className="mt-5 w-full sm:w-auto" disabled={savingComm} onClick={() => updateComm(commForm)}>
+              {savingComm ? "Saving…" : "Save Communication Settings"}
             </Button>
           </SectionCard>
 

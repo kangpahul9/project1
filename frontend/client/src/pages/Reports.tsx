@@ -3,13 +3,15 @@ import {
   useDailyReport, useWeeklyReport, useWeeklySummary, useMonthlyReport,
   useMonthlySummary, useTopProducts, useProductAnalytics, useHourlyReport
 } from "@/hooks/use-reports";
+import { useShiftLogs, useShiftAnalytics } from "@/hooks/use-roster";
+import { useWithdrawalHistory, useDepositHistory } from "@/hooks/use-withdraw";
 import { useState } from "react";
 import { useCurrency } from "@/hooks/use-currency";
 import {
   Loader2, Search, TrendingUp, Clock, BarChart3,
   Download, Calendar, ArrowUpRight, ArrowDownRight,
   ChevronRight, ArrowLeft, CalendarDays, CalendarRange,
-  Award, Flame,
+  Award, Flame, Users, UserCheck, DollarSign, ArrowRightLeft, Wallet,
 } from "lucide-react";
 import { withApiBase } from "@/lib/api-base";
 import { Button } from "@/components/ui/button";
@@ -21,7 +23,7 @@ import {
 } from "recharts";
 
 // ── types ────────────────────────────────────────────────────────────────────
-type ReportView = "daily" | "weekly" | "monthly" | "top-items" | "item-search" | "hourly";
+type ReportView = "daily" | "weekly" | "monthly" | "top-items" | "item-search" | "hourly" | "staff-attendance" | "payroll-summary" | "cash-flow";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function GrowthBadge({ value }: { value: number }) {
@@ -133,6 +135,19 @@ export default function Reports() {
   const [itemSearch, setItemSearch] = useState("");
   const [submittedSearch, setSubmittedSearch] = useState("");
 
+  // hub search
+  const [hubSearch, setHubSearch] = useState("");
+
+  // staff & payroll date range (default: last 7 days)
+  const _today = new Date().toISOString().split("T")[0];
+  const _minus7 = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  const [staffStart, setStaffStart] = useState(_minus7);
+  const [staffEnd, setStaffEnd] = useState(_today);
+  const [payrollStart, setPayrollStart] = useState(_minus7);
+  const [payrollEnd, setPayrollEnd] = useState(_today);
+  const [cashStart, setCashStart] = useState(_today);
+  const [cashEnd, setCashEnd] = useState(_today);
+
   // data hooks
   const { data: report, isLoading: dailyLoading } = useDailyReport(selectedDate);
   const { data: weeklySummary, isLoading: weeklyLoading } = useWeeklySummary();
@@ -142,6 +157,10 @@ export default function Reports() {
   const { data: topProducts, isLoading: topLoading } = useTopProducts(itemRange, appliedStart, appliedEnd);
   const { data: productAnalytics, isLoading: analyticsLoading } = useProductAnalytics(submittedSearch || undefined, itemRange, appliedStart, appliedEnd);
   const { data: hourlyData, isLoading: hourlyLoading } = useHourlyReport(itemRange, appliedStart, appliedEnd);
+  const { data: shiftLogs, isLoading: staffLoading } = useShiftLogs(staffStart, staffEnd);
+  const { data: shiftAnalytics, isLoading: payrollLoading } = useShiftAnalytics(payrollStart, payrollEnd, "actual");
+  const { data: withdrawals, isLoading: withdrawLoading } = useWithdrawalHistory({ from: cashStart, to: cashEnd });
+  const { data: deposits, isLoading: depositLoading } = useDepositHistory({ from: cashStart, to: cashEnd });
 
   const handleExport = async (type: "daily" | "weekly" | "monthly") => {
     const token = localStorage.getItem("token");
@@ -621,85 +640,333 @@ export default function Reports() {
   );
 
   // ══════════════════════════════════════════════════════
-  // HUB (default landing)
+  // STAFF ATTENDANCE
   // ══════════════════════════════════════════════════════
-  const Hub = () => (
+  const StaffAttendanceView = () => (
     <>
-      <div className="mb-7">
-        <h1 className="text-2xl lg:text-3xl font-bold text-foreground flex items-center gap-2.5">
-          <BarChart3 className="w-6 h-6 text-primary shrink-0" />
-          Reports
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">Choose a report to view</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Sales Reports group */}
-        <SectionGroup
-          icon={TrendingUp}
-          title="Sales Reports"
-          description="Revenue, orders, and payment breakdowns"
-        >
-          <ReportTile
-            icon={Calendar}
-            iconBg="bg-blue-50 dark:bg-blue-950/40"
-            iconClass="text-blue-600 dark:text-blue-400"
-            label="Daily Report"
-            desc="Today's totals, cash vs online, unpaid orders"
-            onClick={() => setActiveView("daily")}
-          />
-          <ReportTile
-            icon={CalendarDays}
-            iconBg="bg-violet-50 dark:bg-violet-950/40"
-            iconClass="text-violet-600 dark:text-violet-400"
-            label="Weekly Report"
-            desc="7-day summary with day-by-day trend chart"
-            onClick={() => setActiveView("weekly")}
-          />
-          <ReportTile
-            icon={CalendarRange}
-            iconBg="bg-indigo-50 dark:bg-indigo-950/40"
-            iconClass="text-indigo-600 dark:text-indigo-400"
-            label="Monthly Report"
-            desc="Month-to-date totals and daily trend"
-            onClick={() => setActiveView("monthly")}
-          />
-        </SectionGroup>
-
-        {/* Item Analytics group */}
-        <SectionGroup
-          icon={Award}
-          title="Item Analytics"
-          description="Dig into what's selling and when"
-        >
-          <ReportTile
-            icon={Flame}
-            iconBg="bg-orange-50 dark:bg-orange-950/40"
-            iconClass="text-orange-500 dark:text-orange-400"
-            label="Top Items"
-            desc="Best selling items by quantity and revenue"
-            onClick={() => setActiveView("top-items")}
-          />
-          <ReportTile
-            icon={Search}
-            iconBg="bg-emerald-50 dark:bg-emerald-950/40"
-            iconClass="text-emerald-600 dark:text-emerald-400"
-            label="Item Search"
-            desc="Deep dive into any single menu item's performance"
-            onClick={() => setActiveView("item-search")}
-          />
-          <ReportTile
-            icon={Clock}
-            iconBg="bg-amber-50 dark:bg-amber-950/40"
-            iconClass="text-amber-600 dark:text-amber-400"
-            label="Hourly Pattern"
-            desc="Find your peak and quietest hours of the day"
-            onClick={() => setActiveView("hourly")}
-          />
-        </SectionGroup>
-      </div>
+      <DetailHeader icon={UserCheck} title="Staff Attendance"
+        right={
+          <div className="flex items-center gap-2 flex-wrap">
+            <Input type="date" value={staffStart} onChange={e => setStaffStart(e.target.value)} className="w-36 h-9 text-sm" />
+            <span className="text-muted-foreground text-sm">to</span>
+            <Input type="date" value={staffEnd} onChange={e => setStaffEnd(e.target.value)} className="w-36 h-9 text-sm" />
+          </div>
+        }
+      />
+      {staffLoading ? (
+        <div className="flex justify-center py-16"><Loader2 className="animate-spin w-6 h-6 text-primary" /></div>
+      ) : !shiftLogs?.length ? (
+        <div className="bg-card rounded-2xl border border-border/60 shadow-sm p-12 text-center">
+          <UserCheck className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+          <p className="text-muted-foreground text-sm">No shift logs found for this period.</p>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+            <KpiCard title="Total Logs" value={shiftLogs.length} />
+            <KpiCard title="Total Hours" value={`${shiftLogs.reduce((s: number, l: any) => s + Number(l.actual_hours || 0), 0).toFixed(1)}h`} />
+            <KpiCard title="Still Clocked In" value={shiftLogs.filter((l: any) => l.clocked_in_at && !l.clocked_out_at).length} />
+          </div>
+          <div className="bg-card rounded-2xl border border-border/60 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40 border-b">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Staff</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Date</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Clock In</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Clock Out</th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Hours</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shiftLogs.map((log: any) => (
+                    <tr key={log.id} className="border-b border-border/40 hover:bg-muted/20 transition-colors">
+                      <td className="px-4 py-3 font-medium text-foreground">{log.staff_name}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{log.shift_date}</td>
+                      <td className="px-4 py-3 text-foreground">
+                        {log.clocked_in_at ? new Date(log.clocked_in_at).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        {log.clocked_out_at
+                          ? new Date(log.clocked_out_at).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })
+                          : <span className="text-amber-600 text-xs font-medium bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded-full">Active</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium">
+                        {log.actual_hours ? `${Number(log.actual_hours).toFixed(1)}h` : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-muted/20 border-t">
+                  <tr>
+                    <td colSpan={4} className="px-4 py-3 font-semibold text-foreground">Total Hours</td>
+                    <td className="px-4 py-3 text-right font-bold text-primary">
+                      {shiftLogs.reduce((s: number, l: any) => s + Number(l.actual_hours || 0), 0).toFixed(1)}h
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
+
+  // ══════════════════════════════════════════════════════
+  // PAYROLL SUMMARY
+  // ══════════════════════════════════════════════════════
+  const PayrollSummaryView = () => {
+    const staffMap = new Map<number, { name: string; hours: number; cost: number }>();
+    ((shiftAnalytics as any[]) || []).forEach((r: any) => {
+      const prev = staffMap.get(r.staff_id) || { name: r.name, hours: 0, cost: 0 };
+      prev.hours += Number(r.hours || 0);
+      prev.cost  += Number(r.hours || 0) * Number(r.base_rate || 0);
+      staffMap.set(r.staff_id, prev);
+    });
+    const rows = Array.from(staffMap.values());
+    const totalHours = rows.reduce((s, r) => s + r.hours, 0);
+    const totalCost  = rows.reduce((s, r) => s + r.cost,  0);
+
+    return (
+      <>
+        <DetailHeader icon={DollarSign} title="Payroll Summary"
+          right={
+            <div className="flex items-center gap-2 flex-wrap">
+              <Input type="date" value={payrollStart} onChange={e => setPayrollStart(e.target.value)} className="w-36 h-9 text-sm" />
+              <span className="text-muted-foreground text-sm">to</span>
+              <Input type="date" value={payrollEnd} onChange={e => setPayrollEnd(e.target.value)} className="w-36 h-9 text-sm" />
+            </div>
+          }
+        />
+        {payrollLoading ? (
+          <div className="flex justify-center py-16"><Loader2 className="animate-spin w-6 h-6 text-primary" /></div>
+        ) : !rows.length ? (
+          <div className="bg-card rounded-2xl border border-border/60 shadow-sm p-12 text-center">
+            <DollarSign className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-muted-foreground text-sm">No payroll data for this period.</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <KpiCard title="Total Hours" value={`${totalHours.toFixed(1)}h`} />
+              <KpiCard title="Estimated Labour Cost" value={format(totalCost)} />
+            </div>
+            <div className="bg-card rounded-2xl border border-border/60 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/40 border-b">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Staff Member</th>
+                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Hours Worked</th>
+                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Est. Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row) => (
+                      <tr key={row.name} className="border-b border-border/40 hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-3 font-medium text-foreground">{row.name}</td>
+                        <td className="px-4 py-3 text-right">{row.hours.toFixed(1)}h</td>
+                        <td className="px-4 py-3 text-right font-medium text-foreground">{format(row.cost)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-muted/20 border-t">
+                    <tr>
+                      <td className="px-4 py-3 font-semibold text-foreground">Total</td>
+                      <td className="px-4 py-3 text-right font-bold">{totalHours.toFixed(1)}h</td>
+                      <td className="px-4 py-3 text-right font-bold text-primary">{format(totalCost)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+      </>
+    );
+  };
+
+  // ══════════════════════════════════════════════════════
+  // CASH FLOW
+  // ══════════════════════════════════════════════════════
+  const CashFlowView = () => {
+    const allWithdrawals = withdrawals || [];
+    const allDeposits    = deposits    || [];
+    const totalOut = allWithdrawals.reduce((s, w) => s + Number(w.amount || 0), 0);
+    const totalIn  = allDeposits.reduce((s, d) => s + Number(d.amount || 0), 0);
+    const net = totalIn - totalOut;
+
+    return (
+      <>
+        <DetailHeader icon={ArrowRightLeft} title="Cash Flow"
+          right={
+            <div className="flex items-center gap-2 flex-wrap">
+              <Input type="date" value={cashStart} onChange={e => setCashStart(e.target.value)} className="w-36 h-9 text-sm" />
+              <span className="text-muted-foreground text-sm">to</span>
+              <Input type="date" value={cashEnd} onChange={e => setCashEnd(e.target.value)} className="w-36 h-9 text-sm" />
+            </div>
+          }
+        />
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <KpiCard title="Total In" value={format(totalIn)}
+            sub={<span className="text-xs text-emerald-600 font-medium">{allDeposits.length} deposit{allDeposits.length !== 1 ? "s" : ""}</span>} />
+          <KpiCard title="Total Out" value={format(totalOut)}
+            sub={<span className="text-xs text-red-600 font-medium">{allWithdrawals.length} withdrawal{allWithdrawals.length !== 1 ? "s" : ""}</span>} />
+          <KpiCard title="Net Flow" value={format(net)}
+            sub={<span className={cn("text-xs font-medium", net >= 0 ? "text-emerald-600" : "text-red-600")}>{net >= 0 ? "Positive" : "Negative"}</span>} />
+        </div>
+        {(withdrawLoading || depositLoading) ? (
+          <div className="flex justify-center py-8"><Loader2 className="animate-spin w-6 h-6 text-primary" /></div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="bg-card rounded-2xl border border-border/60 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b bg-emerald-50 dark:bg-emerald-950/20 flex items-center gap-2">
+                <ArrowDownRight className="w-4 h-4 text-emerald-600" />
+                <h3 className="font-semibold text-sm">Deposits</h3>
+              </div>
+              {allDeposits.length === 0 ? (
+                <p className="text-center py-8 text-muted-foreground text-sm">No deposits in this period</p>
+              ) : (
+                <div className="divide-y divide-border/40 max-h-80 overflow-y-auto">
+                  {allDeposits.map((d) => (
+                    <div key={d.id} className="px-4 py-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{d.reason || "Deposit"}</p>
+                        <p className="text-xs text-muted-foreground">{new Date(d.created_at).toLocaleDateString("en-AU")}</p>
+                      </div>
+                      <span className="text-sm font-semibold text-emerald-600">+{format(Number(d.amount))}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="bg-card rounded-2xl border border-border/60 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b bg-red-50 dark:bg-red-950/20 flex items-center gap-2">
+                <ArrowUpRight className="w-4 h-4 text-red-600" />
+                <h3 className="font-semibold text-sm">Withdrawals</h3>
+              </div>
+              {allWithdrawals.length === 0 ? (
+                <p className="text-center py-8 text-muted-foreground text-sm">No withdrawals in this period</p>
+              ) : (
+                <div className="divide-y divide-border/40 max-h-80 overflow-y-auto">
+                  {allWithdrawals.map((w) => (
+                    <div key={w.id} className="px-4 py-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{w.reason || "Withdrawal"}</p>
+                        <p className="text-xs text-muted-foreground">{new Date(w.created_at).toLocaleDateString("en-AU")}</p>
+                      </div>
+                      <span className="text-sm font-semibold text-red-600">−{format(Number(w.amount))}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </>
+    );
+  };
+
+  // ══════════════════════════════════════════════════════
+  // HUB (default landing)
+  // ══════════════════════════════════════════════════════
+  const Hub = () => {
+    const q = hubSearch.trim().toLowerCase();
+    const matches = (label: string, desc: string) =>
+      !q || label.toLowerCase().includes(q) || desc.toLowerCase().includes(q);
+
+    type TileDef = {
+      icon: React.ComponentType<{ className?: string }>;
+      iconBg: string; iconClass: string;
+      label: string; desc: string; view: ReportView;
+    };
+    type GroupDef = {
+      icon: React.ComponentType<{ className?: string }>;
+      title: string; description: string; tiles: TileDef[];
+    };
+
+    const groups: GroupDef[] = [
+      {
+        icon: TrendingUp, title: "Sales Reports", description: "Revenue, orders, and payment breakdowns",
+        tiles: [
+          { icon: Calendar,     iconBg: "bg-blue-50 dark:bg-blue-950/40",   iconClass: "text-blue-600 dark:text-blue-400",   label: "Daily Report",   desc: "Today's totals, cash vs online, unpaid orders",   view: "daily" },
+          { icon: CalendarDays, iconBg: "bg-violet-50 dark:bg-violet-950/40", iconClass: "text-violet-600 dark:text-violet-400", label: "Weekly Report",  desc: "7-day summary with day-by-day trend chart",       view: "weekly" },
+          { icon: CalendarRange,iconBg: "bg-indigo-50 dark:bg-indigo-950/40", iconClass: "text-indigo-600 dark:text-indigo-400", label: "Monthly Report", desc: "Month-to-date totals and daily trend",             view: "monthly" },
+        ],
+      },
+      {
+        icon: Award, title: "Item Analytics", description: "Dig into what's selling and when",
+        tiles: [
+          { icon: Flame,  iconBg: "bg-orange-50 dark:bg-orange-950/40", iconClass: "text-orange-500 dark:text-orange-400", label: "Top Items",      desc: "Best selling items by quantity and revenue",          view: "top-items" },
+          { icon: Search, iconBg: "bg-emerald-50 dark:bg-emerald-950/40", iconClass: "text-emerald-600 dark:text-emerald-400", label: "Item Search",    desc: "Deep dive into any single menu item's performance",  view: "item-search" },
+          { icon: Clock,  iconBg: "bg-amber-50 dark:bg-amber-950/40",   iconClass: "text-amber-600 dark:text-amber-400",   label: "Hourly Pattern", desc: "Find your peak and quietest hours of the day",        view: "hourly" },
+        ],
+      },
+      {
+        icon: Users, title: "Staff & Payroll", description: "Attendance, hours, and estimated labour costs",
+        tiles: [
+          { icon: UserCheck,  iconBg: "bg-teal-50 dark:bg-teal-950/40",  iconClass: "text-teal-600 dark:text-teal-400",  label: "Staff Attendance",  desc: "Clock-in/out logs and actual hours worked per shift",  view: "staff-attendance" },
+          { icon: DollarSign, iconBg: "bg-cyan-50 dark:bg-cyan-950/40",  iconClass: "text-cyan-600 dark:text-cyan-400",  label: "Payroll Summary",   desc: "Estimated labour costs by staff over any date range",  view: "payroll-summary" },
+        ],
+      },
+      {
+        icon: Wallet, title: "Cash & Operations", description: "Cash movements and drawer history",
+        tiles: [
+          { icon: ArrowRightLeft, iconBg: "bg-rose-50 dark:bg-rose-950/40",   iconClass: "text-rose-600 dark:text-rose-400",   label: "Cash Flow",  desc: "Withdrawals and deposits across any date range",  view: "cash-flow" },
+        ],
+      },
+    ];
+
+    const visibleGroups = q
+      ? groups.map(g => ({ ...g, tiles: g.tiles.filter(t => matches(t.label, t.desc)) })).filter(g => g.tiles.length > 0)
+      : groups;
+
+    return (
+      <>
+        <div className="mb-6">
+          <h1 className="text-2xl lg:text-3xl font-bold text-foreground flex items-center gap-2.5">
+            <BarChart3 className="w-6 h-6 text-primary shrink-0" />
+            Reports
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">Choose a report to view</p>
+        </div>
+
+        <div className="relative mb-5 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <Input
+            className="pl-9 h-9 text-sm"
+            placeholder="Search reports…"
+            value={hubSearch}
+            onChange={(e) => setHubSearch(e.target.value)}
+          />
+        </div>
+
+        {visibleGroups.length === 0 ? (
+          <div className="text-center py-16 text-muted-foreground text-sm">No reports match "{hubSearch}"</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {visibleGroups.map((group) => (
+              <SectionGroup key={group.title} icon={group.icon} title={group.title} description={group.description}>
+                {group.tiles.map((tile) => (
+                  <ReportTile
+                    key={tile.label}
+                    icon={tile.icon}
+                    iconBg={tile.iconBg}
+                    iconClass={tile.iconClass}
+                    label={tile.label}
+                    desc={tile.desc}
+                    onClick={() => setActiveView(tile.view)}
+                  />
+                ))}
+              </SectionGroup>
+            ))}
+          </div>
+        )}
+      </>
+    );
+  };
 
   // ══════════════════════════════════════════════════════
   // RENDER
@@ -713,9 +980,12 @@ export default function Reports() {
         {activeView === "daily"    && <DailyReportView />}
         {activeView === "weekly"   && <WeeklyReportView />}
         {activeView === "monthly"  && <MonthlyReportView />}
-        {activeView === "top-items"   && <TopItemsView />}
-        {activeView === "item-search" && <ItemSearchView />}
-        {activeView === "hourly"      && <HourlyView />}
+        {activeView === "top-items"        && <TopItemsView />}
+        {activeView === "item-search"      && <ItemSearchView />}
+        {activeView === "hourly"           && <HourlyView />}
+        {activeView === "staff-attendance" && <StaffAttendanceView />}
+        {activeView === "payroll-summary"  && <PayrollSummaryView />}
+        {activeView === "cash-flow"        && <CashFlowView />}
         </div>
       </main>
     </div>

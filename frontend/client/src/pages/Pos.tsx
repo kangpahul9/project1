@@ -72,6 +72,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { useLocation } from "wouter";
 import { useMarkOrderPaid, useOrderById } from "@/hooks/use-unpaid-orders";
@@ -105,7 +106,7 @@ function BarcodeViewDialog({
     if (!item?.barcode) return;
     const timer = setTimeout(() => {
       if (svgRef.current) {
-        JsBarcode(svgRef.current, item.barcode, {
+        JsBarcode(svgRef.current, item.barcode ?? "", {
           format: "CODE128",
           lineColor: "#000",
           width: 2,
@@ -172,6 +173,7 @@ function BarcodeViewDialog({
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>{item?.name} — Barcode</DialogTitle>
+          <DialogDescription>Scan or download the barcode for this product.</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col items-center gap-4 py-2">
           <svg ref={svgRef} />
@@ -643,11 +645,11 @@ export default function Pos() {
       >
         {/* ── Mode toggle + Search bar ── */}
         <div className="px-4 pt-16 lg:px-5 lg:pt-5 bg-background border-b">
-          {/* Takeaway / Dine-In toggle */}
+          {/* Order / Tables toggle */}
           <div className="flex items-center gap-2 pb-3">
             {([
-              { mode: "takeaway" as const, label: "Takeaway", icon: Car },
-              { mode: "dine-in"  as const, label: "Dine In",  icon: LayoutGrid },
+              { mode: "takeaway" as const, label: "Order", icon: Car },
+              { mode: "dine-in"  as const, label: "Tables", icon: LayoutGrid },
             ]).map(({ mode, label, icon: Icon }) => (
               <button
                 key={mode}
@@ -1027,7 +1029,7 @@ export default function Pos() {
             </div>
           </div>
 
-          {/* Customer fields — required for takeaway */}
+          {/* Customer fields — required for Order (walk-up) mode */}
           {posMode === "takeaway" && !isUnpaidPayment && (
             <div className="space-y-1.5 pb-1">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
@@ -1127,6 +1129,7 @@ export default function Pos() {
         <DialogContent className="w-[95vw] max-w-sm">
           <DialogHeader>
             <DialogTitle>Choose Payment Method</DialogTitle>
+            <DialogDescription>Select how this order will be paid.</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 mt-2">
             {[
@@ -1187,6 +1190,7 @@ export default function Pos() {
               {paymentMode === "eftpos" && "EFTPOS Terminal"}
               {paymentMode === "unpaid" && "Credit / Unpaid Order"}
             </DialogTitle>
+            <DialogDescription>Complete the payment to finalise this order.</DialogDescription>
           </DialogHeader>
 
           {/* CASH */}
@@ -1378,6 +1382,7 @@ export default function Pos() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Print Bill?</DialogTitle>
+            <DialogDescription>Order #{printBillNumber} was completed successfully.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
@@ -1409,6 +1414,7 @@ export default function Pos() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingCategory ? "Edit Category" : "Add Category"}</DialogTitle>
+            <DialogDescription>{editingCategory ? "Update this category." : "Add a new menu category."}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <Input
@@ -1453,6 +1459,7 @@ export default function Pos() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingMenuItem ? "Edit Menu Item" : "Add Menu Item"}</DialogTitle>
+            <DialogDescription>{editingMenuItem ? "Update this menu item." : "Add a new item to the menu."}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <Input

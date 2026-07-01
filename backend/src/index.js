@@ -22,8 +22,6 @@ import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
 import cron from "node-cron";
-import jwt from "jsonwebtoken";
-
 import pool from "./config/db.js";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import helmet from "helmet";
@@ -218,22 +216,13 @@ app.use(
 );
 
 
-// serve uploads — JWT required (Authorization header or ?token= query param)
+// serve uploads as public static files — menu/product images are not sensitive
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, "..", "uploads");
-app.get("/uploads/:filename", (req, res) => {
-  const authHeader = req.headers.authorization;
-  const token =
-    (authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null) ||
-    req.query.token;
-  if (!token) return res.status(401).json({ message: "Unauthorized" });
-  try {
-    jwt.verify(token, process.env.JWT_SECRET);
-    const filename = path.basename(req.params.filename);
-    res.sendFile(path.join(UPLOAD_DIR, filename));
-  } catch {
-    return res.status(401).json({ message: "Invalid token" });
-  }
-});
+app.use("/uploads", (req, _res, next) => {
+  // strip CORP header set by Helmet so cross-origin img tags can load these assets
+  _res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  next();
+}, express.static(UPLOAD_DIR, { maxAge: "1y", etag: true }));
 
 /* =========================
    HEALTH CHECK

@@ -38,6 +38,9 @@ import {
   Link2,
   ArrowRightLeft,
   Building2,
+  Calendar,
+  Clock,
+  UserCheck,
 } from "lucide-react";
 import { useState } from "react";
 import { toastError } from "@/hooks/use-toast";
@@ -57,6 +60,7 @@ import { useCurrency, useDenominations } from "@/hooks/use-currency";
 import { usePartners } from "@/hooks/use-partners";
 import { useLocation } from "wouter";
 import { useBankBalance, useBankTransaction } from "@/hooks/use-bank";
+import { useMyShifts, useMyStatus } from "@/hooks/use-roster";
 import { cn } from "@/lib/utils";
 
 /* ── LOCAL COMPONENTS ── */
@@ -150,6 +154,10 @@ export default function Dashboard() {
   const { data: balance } = useBankBalance();
   const { mutate: bankTx } = useBankTransaction();
   const { data: partners } = usePartners();
+
+  // staff-role hooks
+  const { data: myShifts, isLoading: shiftsLoading } = useMyShifts();
+  const { data: myStatus } = useMyStatus();
 
   const [withdrawPartnerId, setWithdrawPartnerId] = useState<number | null>(null);
   const [depositPartnerId, setDepositPartnerId] = useState<number | null>(null);
@@ -366,6 +374,76 @@ export default function Dashboard() {
                     iconBg={bankBal >= 0 ? "bg-emerald-100 dark:bg-emerald-900/40" : "bg-red-100 dark:bg-red-900/40"}
                     iconColor={bankBal >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}
                   />
+                </div>
+              )}
+
+              {/* ── MY UPCOMING SHIFTS (staff view) ── */}
+              {!isAdmin && (
+                <div className="mb-6">
+                  <div className="bg-card rounded-2xl border border-border/60 shadow-sm overflow-hidden">
+                    <div className="px-5 py-4 border-b bg-muted/30 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                        <Calendar className="w-4 h-4 text-primary" />
+                      </div>
+                      <div>
+                        <h2 className="font-semibold text-sm text-foreground">My Upcoming Shifts</h2>
+                        <p className="text-xs text-muted-foreground">Your scheduled shifts from today onwards</p>
+                      </div>
+                      {myStatus?.clocked_in && (
+                        <span className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Clocked In
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-3">
+                      {shiftsLoading ? (
+                        <div className="flex justify-center py-6">
+                          <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                        </div>
+                      ) : !myShifts?.length ? (
+                        <div className="text-center py-8">
+                          <Calendar className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+                          <p className="text-sm text-muted-foreground">No upcoming shifts scheduled</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          {myShifts.map((shift) => {
+                            const isToday = shift.date === new Date().toISOString().split("T")[0];
+                            const fmt = (t: string) => {
+                              const [h, m] = t.split(":");
+                              const hr = parseInt(h);
+                              return `${hr > 12 ? hr - 12 : hr || 12}:${m} ${hr >= 12 ? "PM" : "AM"}`;
+                            };
+                            return (
+                              <div key={shift.id} className={cn(
+                                "flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
+                                isToday
+                                  ? "bg-primary/5 border-primary/20"
+                                  : "bg-muted/30 border-transparent"
+                              )}>
+                                <div className={cn(
+                                  "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
+                                  isToday ? "bg-primary/10" : "bg-muted"
+                                )}>
+                                  {isToday ? <UserCheck className="w-4 h-4 text-primary" /> : <Clock className="w-4 h-4 text-muted-foreground" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className={cn("text-sm font-semibold", isToday ? "text-primary" : "text-foreground")}>
+                                    {isToday ? "Today" : new Date(shift.date + "T00:00:00").toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "short" })}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">{fmt(shift.shift_start)} – {fmt(shift.shift_end)}</p>
+                                </div>
+                                {isToday && (
+                                  <span className="text-xs font-medium text-primary shrink-0">Today</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
 

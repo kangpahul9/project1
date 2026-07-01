@@ -1,6 +1,8 @@
 node_modules
 dist
 .DS_Store
+KangPos-Landing/
+frontend/.vite/
 server/public
 vite.config.ts.*
 *.tar.gz

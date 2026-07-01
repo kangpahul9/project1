@@ -130,7 +130,7 @@ const DashboardMockup = () => (
         <div className="bg-slate-900 border border-white/5 p-4 rounded-lg">
           <div className="text-slate-400 text-xs mb-1 flex items-center gap-2"><Utensils className="w-3 h-3" /> Orders</div>
           <div className="text-white text-2xl font-bold font-heading">147</div>
-          <div className="text-green-400 text-xs mt-1">42 Dine-in, 105 Takeaway</div>
+          <div className="text-green-400 text-xs mt-1">42 Tables, 105 Orders</div>
         </div>
         <div className="bg-slate-900 border border-white/5 p-4 rounded-lg">
           <div className="text-slate-400 text-xs mb-1 flex items-center gap-2"><Coins className="w-3 h-3" /> Cash in Till</div>
@@ -183,7 +183,7 @@ const Hero = () => {
           className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium"
         >
           <span className="flex h-2 w-2 rounded-full bg-blue-500"></span>
-          Now live — built for Australian business
+          Introducing the gen-next POS system
         </motion.div>
         
         <motion.h1 
@@ -192,7 +192,7 @@ const Hero = () => {
           transition={{ duration: 0.5, delay: 0.1 }}
           className="text-4xl md:text-6xl lg:text-7xl font-extrabold text-white tracking-tight mb-6 font-heading max-w-4xl mx-auto"
         >
-          Run your business <span className="text-blue-500">smarter</span>, faster, together.
+          The system that <span className="text-blue-500">changes the way</span> you manage your business.
         </motion.h1>
         
         <motion.p 
@@ -201,7 +201,7 @@ const Hero = () => {
           transition={{ duration: 0.5, delay: 0.2 }}
           className="text-lg md:text-xl text-slate-400 mb-10 max-w-2xl mx-auto"
         >
-          Orders, payroll, cash management, staff scheduling, and AI-powered insights — all in one platform designed for modern business.
+          Your business at your phone. Orders, payroll, cash, staff scheduling, and AI insights — all in one place, built for the way modern business actually runs.
         </motion.p>
         
         <motion.div 
@@ -715,7 +715,7 @@ const Footer = () => {
           <div className="col-span-2 lg:col-span-2">
             <Logo />
             <p className="mt-4 text-sm max-w-xs">
-              Run your business smarter, faster, together. The all-in-one POS built by operators, for operators.
+              The gen-next POS system that changes the way you manage your business. Your business at your phone.
             </p>
           </div>
           

@@ -61,7 +61,7 @@ const Navbar = () => {
             Login
           </a>
           <Button asChild className="bg-linear-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white border-0 rounded-full shadow-md shadow-blue-600/30 hover:shadow-blue-500/40 transition-all duration-200">
-            <a href={APP_URL} data-testid="btn-nav-get-started">Get Started</a>
+            <a href="/signup" data-testid="btn-nav-get-started">Get Started</a>
           </Button>
         </div>
 
@@ -81,7 +81,7 @@ const Navbar = () => {
           <hr className="border-white/10" />
           <a href={APP_URL} className="text-slate-300 py-2">Login</a>
           <Button asChild className="bg-linear-to-r from-blue-600 to-blue-500 text-white w-full mt-2 rounded-full border-0 shadow-md shadow-blue-600/30">
-            <a href={APP_URL}>Get Started</a>
+            <a href="/signup">Get Started</a>
           </Button>
         </div>
       )}
@@ -211,7 +211,7 @@ const Hero = () => {
           className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8"
         >
           <Button asChild size="lg" className="bg-linear-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white w-full sm:w-auto text-base h-12 px-8 rounded-full shadow-lg shadow-blue-600/35 hover:shadow-blue-500/50 hover:scale-[1.02] transition-all duration-200 border-0">
-            <a href={APP_URL} data-testid="btn-hero-primary">Try free for 2 weeks <ArrowRight className="ml-2 w-4 h-4" /></a>
+            <a href="/signup" data-testid="btn-hero-primary">Try free for 2 weeks <ArrowRight className="ml-2 w-4 h-4" /></a>
           </Button>
           <Button asChild variant="outline" size="lg" className="border-white/15 text-white/90 hover:text-white hover:bg-white/8 w-full sm:w-auto text-base h-12 px-8 rounded-full bg-white/5 backdrop-blur-sm transition-all duration-200">
             <a href="#how-it-works" data-testid="btn-hero-secondary">See how it works</a>
@@ -514,7 +514,7 @@ const Pricing = () => {
             <p className="text-slate-600 mb-8">Everything included. No device limits.</p>
 
             <Button asChild size="lg" className="w-full bg-linear-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white mb-8 h-12 rounded-full shadow-lg shadow-blue-600/30 hover:shadow-blue-500/45 hover:scale-[1.01] transition-all duration-200 border-0">
-              <a href={APP_URL} data-testid="btn-pricing-standard">Start free for 2 weeks →</a>
+              <a href="/signup" data-testid="btn-pricing-standard">Start free for 2 weeks →</a>
             </Button>
 
             <ul className="space-y-4">

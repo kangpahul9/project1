@@ -34,6 +34,7 @@ import { randomUUID } from "crypto";
 
 // routes
 import authRoutes from "./routes/auth.js";
+import registerRoutes from "./routes/register.js";
 import aiRoutes from "./routes/ai.js";
 import menuRoutes from "./routes/menu.js";
 import businessDayRoutes from "./routes/businessDays.js";
@@ -239,6 +240,7 @@ app.get("/health", async (req, res) => {
 app.use("/api", globalLimiter, apiRouter);
 
 apiRouter.use("/auth", authLimiter, authRoutes);
+apiRouter.use("/register", registerRoutes);
 
 // Xero OAuth callback must be before authenticate — Xero redirects here with no JWT
 apiRouter.use("/xero", xeroRoutes);

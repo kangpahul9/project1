@@ -33,7 +33,7 @@ npm run build
 echo "── Building landing site ────────────────────────────────────"
 cd "$LANDING_ROOT"
 npm ci
-VITE_STRIPE_PUBLISHABLE_KEY=pk_test_51ToEn9J6kldiHUNijpzYQE9F3JW6esjGx8wLVxa5ZFk2IuQHPyhO4tjs6wYcjHB1msSHqrLZgchEArlvGGTGoUmf00KtD4SSga \
+VITE_STRIPE_PUBLISHABLE_KEY=pk_live_51ToEmTJTdOYT1mFJUBf32o6eJC5CNa74o4BH7eHCv9M0JdKimlf87r194eHzJXO7sAzPIkapCihp5vnJV9a8FPjk00DtgnI2E8 \
 VITE_API_URL=https://app.kangpos.com \
 npm run build
 

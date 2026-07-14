@@ -706,6 +706,7 @@ export default function Expenses() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Bill Preview</DialogTitle>
+            <DialogDescription>Uploaded bill image for this expense.</DialogDescription>
           </DialogHeader>
           {previewUrl && <img src={previewUrl} className="w-full h-auto rounded-xl" />}
         </DialogContent>

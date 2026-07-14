@@ -7,7 +7,7 @@ import { useSettings } from "@/hooks/use-settings";
 import { useCurrency } from "@/hooks/use-currency";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import dayjs from "dayjs";
 import {
   ChevronLeft, ChevronRight, CheckSquare, Square,
@@ -54,10 +54,8 @@ function RatesDialog({ open, onClose }: { open: boolean; onClose: () => void }) 
           <DialogTitle className="flex items-center gap-2">
             <Settings2 className="w-4 h-4" /> Pay Rate Settings
           </DialogTitle>
+          <DialogDescription>Set weekday / weekend rates per pay type. Leave blank to use the base rate.</DialogDescription>
         </DialogHeader>
-        <p className="text-xs text-muted-foreground mb-3">
-          Set weekday / weekend rates per pay type. Leave blank to use the base rate.
-        </p>
         <div className="space-y-4">
           {(payTypes as any[]).map((pt: any) => {
             const e = editing[pt.id] || {};
@@ -306,6 +304,7 @@ export default function Payroll() {
             <DialogTitle className="flex items-center gap-2">
               <History className="w-4 h-4" /> Payment History
             </DialogTitle>
+            <DialogDescription>All recorded payroll payment batches.</DialogDescription>
           </DialogHeader>
           <div className="divide-y max-h-96 overflow-y-auto">
             {(batches as any[]).length === 0 && (
@@ -342,8 +341,8 @@ export default function Payroll() {
             <DialogTitle className="flex items-center gap-2">
               <Banknote className="w-4 h-4" /> Outstanding Advances
             </DialogTitle>
+            <DialogDescription>Record advances from the Staff page. Partial repayments reduce the net owed.</DialogDescription>
           </DialogHeader>
-          <p className="text-xs text-muted-foreground -mt-1">Record advances from the Staff page. Partial repayments reduce the net owed.</p>
           <div className="divide-y max-h-80 overflow-y-auto">
             {(allAdvances as any[]).length === 0 && (
               <p className="text-sm text-muted-foreground py-6 text-center">No outstanding advances.</p>

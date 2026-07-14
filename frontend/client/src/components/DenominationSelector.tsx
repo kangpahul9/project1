@@ -118,14 +118,20 @@ export function DenominationSelector({
   breakdown,
   setBreakdown,
   title,
+  maxBreakdown,
 }: {
   breakdown: { note: number; qty: number }[];
   setBreakdown: React.Dispatch<React.SetStateAction<{ note: number; qty: number }[]>>;
   title?: string;
+  maxBreakdown?: Record<number, number>;
 }) {
   const adjust = (note: number, delta: number) => {
     setBreakdown(prev =>
-      prev.map(n => n.note === note ? { ...n, qty: Math.max(0, n.qty + delta) } : n)
+      prev.map(n => {
+        if (n.note !== note) return n;
+        const max = maxBreakdown?.[note] ?? Infinity;
+        return { ...n, qty: Math.min(max, Math.max(0, n.qty + delta)) };
+      })
     );
   };
 
@@ -156,6 +162,7 @@ export function DenominationSelector({
           const key = String(n.note);
           const meta = imgMap[key];
           const active = n.qty > 0;
+          const atMax = maxBreakdown !== undefined && n.qty >= (maxBreakdown[n.note] ?? 0);
 
           return (
             <div key={n.note} className="flex flex-col items-center gap-3">
@@ -164,9 +171,10 @@ export function DenominationSelector({
                 meta.kind === "coin" ? (
                   /* ── Circle coin ── */
                   <div
-                    onClick={() => adjust(n.note, 1)}
+                    onClick={() => !atMax && adjust(n.note, 1)}
                     className={cn(
-                      "w-20 h-20 rounded-full overflow-hidden cursor-pointer shadow-md hover:scale-105 active:scale-95 transition-transform",
+                      "w-20 h-20 rounded-full overflow-hidden shadow-md transition-transform",
+                      atMax ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:scale-105 active:scale-95",
                       active && "ring-4 ring-primary ring-offset-2"
                     )}
                   >
@@ -175,9 +183,10 @@ export function DenominationSelector({
                 ) : (
                   /* ── Rectangle note ── */
                   <div
-                    onClick={() => adjust(n.note, 1)}
+                    onClick={() => !atMax && adjust(n.note, 1)}
                     className={cn(
-                      "w-full aspect-[2/1] rounded-xl overflow-hidden cursor-pointer shadow-md hover:scale-105 active:scale-95 transition-transform",
+                      "w-full aspect-[2/1] rounded-xl overflow-hidden shadow-md transition-transform",
+                      atMax ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:scale-105 active:scale-95",
                       active && "ring-4 ring-primary ring-offset-2"
                     )}
                   >
@@ -187,9 +196,10 @@ export function DenominationSelector({
               ) : (
                 /* ── Fallback: show value text in a coloured circle ── */
                 <div
-                  onClick={() => adjust(n.note, 1)}
+                  onClick={() => !atMax && adjust(n.note, 1)}
                   className={cn(
-                    "w-20 h-20 rounded-full flex items-center justify-center font-bold text-lg cursor-pointer shadow-md hover:scale-105 active:scale-95 transition-transform bg-muted text-foreground",
+                    "w-20 h-20 rounded-full flex items-center justify-center font-bold text-lg shadow-md transition-transform bg-muted text-foreground",
+                    atMax ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:scale-105 active:scale-95",
                     active && "ring-4 ring-primary ring-offset-2"
                   )}
                 >
@@ -206,7 +216,7 @@ export function DenominationSelector({
                 )}>
                   {n.qty}
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => adjust(n.note, 1)}>+</Button>
+                <Button size="sm" variant="ghost" onClick={() => adjust(n.note, 1)} disabled={atMax}>+</Button>
               </div>
 
             </div>

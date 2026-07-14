@@ -42,7 +42,7 @@ import {
   Clock,
   UserCheck,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toastError } from "@/hooks/use-toast";
 import { useOrders } from "@/hooks/use-orders";
 import { Link } from "wouter";
@@ -198,6 +198,16 @@ export default function Dashboard() {
   const [depositOpen, setDepositOpen] = useState(false);
   const [depositBreakdown, setDepositBreakdown] = useState(denoms.map((d) => ({ note: d, qty: 0 })));
   const depositTotal = depositBreakdown.reduce((sum, n) => sum + n.note * n.qty, 0);
+
+  // Sync all denomination states when currency settings load (default is AUD before settings fetch)
+  useEffect(() => {
+    const empty = denoms.map((d) => ({ note: d, qty: 0 }));
+    setDenominations(empty);
+    setRecountBreakdown(empty);
+    setClosingBreakdown(empty);
+    setWithdrawBreakdown(empty);
+    setDepositBreakdown(empty);
+  }, [denoms]);
 
   const [bankDepositOpen, setBankDepositOpen] = useState(false);
   const [bankWithdrawOpen, setBankWithdrawOpen] = useState(false);
@@ -664,7 +674,11 @@ export default function Dashboard() {
             <DialogDescription>Select notes to withdraw from drawer.</DialogDescription>
           </DialogHeader>
           <div className="max-h-[35vh] overflow-y-auto pr-2">
-            <DenominationSelector breakdown={withdrawBreakdown} setBreakdown={setWithdrawBreakdown} />
+            <DenominationSelector
+              breakdown={withdrawBreakdown}
+              setBreakdown={setWithdrawBreakdown}
+              maxBreakdown={drawerCash ? Object.fromEntries(drawerCash.breakdown.map(n => [n.note_value, n.quantity])) : undefined}
+            />
           </div>
           <div className="space-y-3 mt-2">
             <div>

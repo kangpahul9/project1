@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { useState, useEffect } from "react";
 import { useCurrentBusinessDay } from "@/hooks/use-business-days";
+import { useCurrentCash } from "@/hooks/use-cash";
 import { DenominationSelector } from "@/components/DenominationSelector";
 import { StatCard } from "@/components/StatCard";
 import {
@@ -34,6 +35,9 @@ export default function Staff() {
   const { data: settings } = useSettings();
   const isAUD = settings?.currency_code === "AUD";
   const { data: currentDay } = useCurrentBusinessDay(true);
+  const businessDayId = currentDay?.id;
+  const useBusinessDay = settings?.use_business_day ?? false;
+  const { data: drawerCash } = useCurrentCash(useBusinessDay, businessDayId);
   const { data: staff } = useStaffWithBalance();
   const { mutate: createStaff } = useCreateStaff();
   const { mutate: addTransaction } = useStaffTransaction();
@@ -68,6 +72,13 @@ export default function Staff() {
   const { data: history } = useStaffHistory(!isAUD ? (historyStaff?.id ?? undefined) : undefined);
   const { data: advanceHistory } = useStaffAdvanceHistory(isAUD ? (historyStaff?.id ?? undefined) : undefined);
   const [selectedNotes, setSelectedNotes] = useState(() => denoms.map(d => ({ note: d, qty: 0 })));
+
+  // Sync denomination states when currency setting loads (AUD is default before fetch)
+  useEffect(() => {
+    const empty = denoms.map(d => ({ note: d, qty: 0 }));
+    setAdvanceDenoms(empty);
+    setSelectedNotes(empty);
+  }, [denoms]);
 
   const [open, setOpen] = useState(false);
   const [newStaff, setNewStaff] = useState({
@@ -554,6 +565,7 @@ export default function Staff() {
                   breakdown={advanceDenoms}
                   setBreakdown={setAdvanceDenoms}
                   title="Cash Used from Galla"
+                  maxBreakdown={drawerCash ? Object.fromEntries(drawerCash.breakdown.map(n => [n.note_value, n.quantity])) : undefined}
                 />
               )}
 

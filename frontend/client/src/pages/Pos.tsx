@@ -1039,7 +1039,7 @@ export default function Pos() {
               <Input
                 placeholder="Phone number *"
                 value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
+                onChange={(e) => setCustomerPhone(e.target.value.replace(/[^0-9+\-\s]/g, ""))}
                 className={cn("h-8 text-sm", !customerPhone.trim() && cart.length > 0 && "border-red-300 dark:border-red-700")}
               />
               <Input
